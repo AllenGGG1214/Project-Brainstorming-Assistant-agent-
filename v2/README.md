@@ -48,20 +48,19 @@ Restart the backend and create a project in Live mode. The selected model must s
 
 Demo mode uses fixed English artifacts, makes no API calls, and performs no real research. A failed live request never falls back to demo content.
 
-## Deploy to Render and Vercel
+## Deploy entirely on Render
 
-The repository includes a Render Blueprint for the FastAPI service and PostgreSQL database, plus Vercel configuration for the Next.js frontend.
+The repository includes a Render Blueprint for the Next.js frontend, FastAPI service, and PostgreSQL database. This is the simplest deployment for a low-traffic Beta.
 
 1. Push this repository to GitHub.
 2. In Render, create a Blueprint from the repository's `render.yaml`.
-3. Set `OPENAI_API_KEY`, a long random `INVITE_CODE`, and the final Vercel URL in `CORS_ORIGINS`. Render supplies `DATABASE_URL` from its managed PostgreSQL database and runs `alembic upgrade head` when the API starts.
-4. In Vercel, import the same repository, set the root directory to `v2/frontend`, and set `API_ORIGIN` to the Render service origin, such as `https://idea-atelier-api.onrender.com`.
-5. Deploy Vercel, then update `CORS_ORIGINS` in Render to the exact Vercel production URL and redeploy the API.
-6. Open the Vercel URL, choose **Have an invite?**, and create the first account with your invite code.
+3. Set `OPENAI_API_KEY` and a long random `INVITE_CODE`. Render supplies `DATABASE_URL`, configures the frontend origin, and runs `alembic upgrade head` when the API starts.
+4. Let the Blueprint create `idea-atelier-web`, `idea-atelier-api`, and `idea-atelier-db`.
+5. Open the `idea-atelier-web` URL, choose **Have an invite?**, and create the first account with your invite code.
 
 Production defaults require authentication, use secure HttpOnly session cookies, isolate projects by account, and limit each account to 20 live generation requests per UTC day. Change `DAILY_GENERATION_LIMIT` in Render if needed. Keep `API_ORIGIN` and every secret in platform environment variables; do not commit them.
 
-For a custom backend hostname, add it to `TRUSTED_HOSTS`. For multiple values, use a comma-separated list. The browser talks to the Next.js origin and Next.js proxies `/api/*` to FastAPI, so login cookies work as first-party cookies.
+For a custom backend hostname, add it to `TRUSTED_HOSTS`. For multiple values, use a comma-separated list. The browser talks to the Next.js origin and Next.js proxies `/api/*` to FastAPI, so login cookies work as first-party cookies. A Vercel configuration remains available if the frontend is moved there later.
 
 The integration follows the official OpenAI documentation for [Web Search](https://developers.openai.com/api/docs/guides/tools-web-search) and [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
 
