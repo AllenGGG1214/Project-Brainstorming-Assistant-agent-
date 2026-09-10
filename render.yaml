@@ -29,7 +29,19 @@ services:
       - key: TRUSTED_HOSTS
         value: "*.onrender.com"
       - key: CORS_ORIGINS
-        sync: false
+        value: https://idea-atelier-web.onrender.com
+
+  - type: web
+    name: idea-atelier-web
+    runtime: node
+    plan: free
+    rootDir: v2/frontend
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
+    startCommand: pnpm start
+    healthCheckPath: /
+    envVars:
+      - key: API_ORIGIN
+        value: https://idea-atelier-api.onrender.com
 
 databases:
   - name: idea-atelier-db
