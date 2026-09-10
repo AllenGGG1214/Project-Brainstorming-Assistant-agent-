@@ -54,7 +54,7 @@ The repository includes a Render Blueprint for the FastAPI service and PostgreSQ
 
 1. Push this repository to GitHub.
 2. In Render, create a Blueprint from the repository's `render.yaml`.
-3. Set `OPENAI_API_KEY`, a long random `INVITE_CODE`, and the final Vercel URL in `CORS_ORIGINS`. Render supplies `DATABASE_URL` from its managed PostgreSQL database and runs `alembic upgrade head` before each deploy.
+3. Set `OPENAI_API_KEY`, a long random `INVITE_CODE`, and the final Vercel URL in `CORS_ORIGINS`. Render supplies `DATABASE_URL` from its managed PostgreSQL database and runs `alembic upgrade head` when the API starts.
 4. In Vercel, import the same repository, set the root directory to `v2/frontend`, and set `API_ORIGIN` to the Render service origin, such as `https://idea-atelier-api.onrender.com`.
 5. Deploy Vercel, then update `CORS_ORIGINS` in Render to the exact Vercel production URL and redeploy the API.
 6. Open the Vercel URL, choose **Have an invite?**, and create the first account with your invite code.
