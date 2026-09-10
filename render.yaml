@@ -36,8 +36,8 @@ services:
     runtime: node
     plan: free
     rootDir: v2/frontend
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
-    startCommand: pnpm start
+    buildCommand: corepack pnpm install --frozen-lockfile && corepack pnpm build
+    startCommand: corepack pnpm start
     healthCheckPath: /
     envVars:
       - key: API_ORIGIN
