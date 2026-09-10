@@ -2,6 +2,7 @@ services:
   - type: web
     name: idea-atelier-api
     runtime: python
+    plan: free
     rootDir: v2/backend
     buildCommand: pip install -r requirements.lock.txt
     preDeployCommand: alembic upgrade head
@@ -33,5 +34,6 @@ services:
 
 databases:
   - name: idea-atelier-db
+    plan: free
     databaseName: idea_atelier
     user: idea_atelier
