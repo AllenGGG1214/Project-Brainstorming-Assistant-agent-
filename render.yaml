@@ -16,6 +16,8 @@ services:
         sync: false
       - key: OPENAI_MODEL
         value: gpt-5.5
+      - key: WORKFLOW_ENGINE
+        value: langgraph
       - key: AUTH_REQUIRED
         value: "true"
       - key: ALLOW_SIGNUPS

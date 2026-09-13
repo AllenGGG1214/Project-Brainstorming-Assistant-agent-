@@ -37,4 +37,5 @@ def test_projects_are_private_between_accounts(tmp_path):
             assert register(second, 'second@example.com').status_code == 201
             assert second.get(f'/api/projects/{project["id"]}').status_code == 404
             assert second.get(f'/api/projects/{project["id"]}/export').status_code == 404
+            assert second.post(f'/api/projects/{project["id"]}/runs/unknown/recover', json={}).status_code == 404
             assert second.get('/api/projects').json() == []

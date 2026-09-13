@@ -1,5 +1,11 @@
 # V2 · Idea Atelier
 
+## V3 basic upgrade
+
+This directory now also contains the V3 basic implementation. `WORKFLOW_ENGINE=langgraph` (the default) runs stage generation through a persistent LangGraph workflow; `WORKFLOW_ENGINE=v2` selects the legacy generator for new runs. Existing V3 jobs still recover when the flag is changed. See [the release and deployment guide](../docs/V3_BASIC_RELEASE.md) for scope, recovery behavior, and rollout requirements.
+
+The basic release includes five named generation nodes, saved results, approval interrupts, GO/PIVOT/STOP outcomes, database leases, and restart recovery. The recovery scheduler runs inside the API process for this low-traffic beta. Next-stage generation remains user initiated. Parallel research, a separate worker, cancellation, and run-level spending budgets belong to the full V3 MVP.
+
 A deployable project planning app with an English interface, a five-stage approval workflow, private accounts, and SQLite or PostgreSQL persistence.
 
 ## Quick start on Windows
@@ -112,6 +118,6 @@ See [VALIDATION.md](VALIDATION.md) for the current verification record.
 
 ## Current boundaries
 
-The included deployment is an invite-only Beta. It does not include password reset, email verification, billing, admin screens, distributed job workers, LangGraph, or RAG. Background generation runs inside the API process; an interrupted deploy marks unfinished runs as failed so the user can retry. Generated prototype scripts run inside an opaque-origin iframe with network and external form submission blocked. Exported HTML no longer has that application-level sandbox when opened directly, so review it before use.
+The included deployment is an invite-only Beta. It does not include password reset, email verification, billing, admin screens, distributed job workers, or RAG. V3 basic generation runs inside the API process with durable checkpoints and leased recovery; tasks do not execute while the service sleeps. Interrupted calls with unknown results require manual retry and may already have consumed API credits. Legacy V2 unfinished runs retain their previous failed-on-restart behavior. Generated prototype scripts run inside an opaque-origin iframe with network and external form submission blocked. Exported HTML no longer has that application-level sandbox when opened directly, so review it before use.
 
 The development environment has no configured OpenAI API key, so live model quality, real search relevance, billing, and evaluation across 5–10 real ideas remain unverified.

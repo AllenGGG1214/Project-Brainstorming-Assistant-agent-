@@ -73,6 +73,21 @@ Index('one_running_per_project', runs.c.project_id, unique=True,
       sqlite_where=text("status='running'"),
       postgresql_where=text("status='running'"))
 
+# One durable graph thread per generation. V2 runs do not have this record.
+graph_jobs = Table(
+    'graph_jobs', metadata,
+    Column('run_id', String(32), ForeignKey('runs.id'), primary_key=True),
+    Column('graph_version', String(20), nullable=False),
+    Column('status', String(24), nullable=False),
+    Column('snapshot', Text, nullable=False),
+    Column('result', Text),
+    Column('call_started', Integer, nullable=False, default=0),
+    Column('approval', Text),
+    Column('lease_token', String(32)),
+    Column('lease_until', String(40)),
+    Column('updated_at', String(40), nullable=False),
+)
+
 
 class DatabaseError(Exception):
     def __init__(self, status, message):
@@ -137,7 +152,8 @@ class Database:
             if not local:
                 c.execute(users.insert().values(id='local-user', email='local@localhost', password_hash='disabled', created_at=timestamp))
             c.execute(update(projects).where(projects.c.user_id.is_(None)).values(user_id='local-user'))
-            c.execute(update(runs).where(runs.c.status == 'running').values(status='failed', error='The service restarted before generation completed. Retry manually.', finished_at=timestamp))
+            v3_ids = select(graph_jobs.c.run_id)
+            c.execute(update(runs).where(and_(runs.c.status == 'running', runs.c.id.not_in(v3_ids))).values(status='failed', error='The service restarted before generation completed. Retry manually.', finished_at=timestamp))
             c.execute(delete(sessions).where(sessions.c.expires_at < timestamp))
 
     def user_count(self):
@@ -205,14 +221,21 @@ class Database:
             run_rows = c.execute(select(runs).where(runs.c.project_id == project_id).order_by(runs.c.created_at.desc()).limit(50)).mappings()
             project['artifacts'] = [{**dict(a), 'content': json.loads(a['content']), 'metadata': json.loads(a['metadata'])} for a in artifact_rows]
             project['runs'] = [dict(r) for r in run_rows]
+            jobs = c.execute(select(graph_jobs.c.run_id, graph_jobs.c.status).where(
+                graph_jobs.c.run_id.in_([r['id'] for r in project['runs']]))).mappings().all()
+            statuses = {j['run_id']: j['status'] for j in jobs}
+            for run in project['runs']:
+                if run['id'] in statuses:
+                    run['engine'] = 'langgraph'
+                    run['workflow_status'] = statuses[run['id']]
             return project
 
-    def prepare_run(self, project_id, user_id, stage, stage_order, feedback, daily_limit):
+    def prepare_run(self, project_id, user_id, stage, stage_order, feedback, daily_limit, graph=False, model=None):
         timestamp = now()
         day_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
         try:
             with self.engine.begin() as c:
-                project_row = c.execute(select(projects).where(and_(projects.c.id == project_id, projects.c.user_id == user_id))).mappings().first()
+                project_row = c.execute(select(projects).where(and_(projects.c.id == project_id, projects.c.user_id == user_id)).with_for_update()).mappings().first()
                 if not project_row:
                     raise DatabaseError(404, 'Project not found.')
                 project = dict(project_row)
@@ -233,17 +256,33 @@ class Database:
                 c.execute(runs.insert().values(id=run_id, project_id=project_id, stage=stage, status='running', feedback=feedback, created_at=timestamp))
                 context = {s: json.loads(active[s]['content']) for s in stage_order[:stage_order.index(stage)]}
                 previous = json.loads(active[stage]['content']) if stage in active else None
+                if graph:
+                    snapshot = {'run_id': run_id, 'project': project, 'stage': stage,
+                                'context': context, 'feedback': feedback, 'previous': previous, 'model': model}
+                    c.execute(graph_jobs.insert().values(run_id=run_id, graph_version='basic-1',
+                        status='queued', snapshot=dump(snapshot), call_started=0, updated_at=timestamp))
                 return run_id, project, context, previous
         except IntegrityError as exc:
             raise DatabaseError(409, 'This project is already generating. Wait for it to finish.') from exc
 
-    def complete_run(self, run_id, project, stage, stage_order, content, metadata_blob):
+    def complete_run(self, run_id, project, stage, stage_order, content, metadata_blob, lease_token=None):
         with self.engine.begin() as c:
-            run = c.execute(select(runs.c.status).where(runs.c.id == run_id).with_for_update()).first()
+            c.execute(select(projects.c.id).where(projects.c.id == project['id']).with_for_update()).first()
+            if lease_token is not None:
+                job = c.execute(select(graph_jobs).where(graph_jobs.c.run_id == run_id).with_for_update()).mappings().first()
+                if not job or job['lease_token'] != lease_token or job['lease_until'] < now():
+                    raise DatabaseError(409, 'Execution lease expired; recovery will continue safely.')
+            run = c.execute(select(runs.c.status, runs.c.artifact_id).where(runs.c.id == run_id).with_for_update()).first()
+            if run and run.status == 'succeeded':
+                return run.artifact_id
             if not run or run.status != 'running':
-                return
+                raise DatabaseError(409, 'This run is no longer active.')
             version = c.execute(select(func.coalesce(func.max(artifacts.c.version), 0) + 1).where(and_(artifacts.c.project_id == project['id'], artifacts.c.stage == stage))).scalar_one()
             affected = stage_order[stage_order.index(stage):]
+            old_runs = select(runs.c.id).where(and_(runs.c.project_id == project['id'],
+                runs.c.stage.in_(affected), runs.c.id != run_id))
+            c.execute(update(graph_jobs).where(and_(graph_jobs.c.run_id.in_(old_runs),
+                graph_jobs.c.status.in_(['waiting_approval', 'queued', 'executing']))).values(status='superseded', updated_at=now()))
             c.execute(update(artifacts).where(and_(artifacts.c.project_id == project['id'], artifacts.c.stage.in_(affected))).values(valid=0))
             artifact_id = uid()
             c.execute(artifacts.insert().values(id=artifact_id, project_id=project['id'], stage=stage, version=version,
@@ -253,10 +292,31 @@ class Database:
                 values['decision'] = None
             c.execute(update(projects).where(projects.c.id == project['id']).values(**values))
             c.execute(update(runs).where(runs.c.id == run_id).values(status='succeeded', artifact_id=artifact_id, finished_at=now()))
+            return artifact_id
 
     def fail_run(self, run_id, message):
         with self.engine.begin() as c:
             c.execute(update(runs).where(runs.c.id == run_id).values(status='failed', error=message, finished_at=now()))
+
+    def recover_graph_approval(self, project_id, user_id, run_id):
+        with self.engine.begin() as c:
+            project = c.execute(select(projects).where(and_(projects.c.id == project_id,
+                projects.c.user_id == user_id)).with_for_update()).first()
+            if not project:
+                raise DatabaseError(404, 'Project not found.')
+            run = c.execute(select(runs).where(and_(runs.c.id == run_id,
+                runs.c.project_id == project_id))).mappings().first()
+            job = c.execute(select(graph_jobs).where(graph_jobs.c.run_id == run_id).with_for_update()).mappings().first()
+            if not run or not job:
+                raise DatabaseError(404, 'Workflow not found.')
+            if job['status'] != 'needs_attention' or run['status'] != 'succeeded' or not job['result']:
+                raise DatabaseError(409, 'This workflow cannot be synchronized. Generate a new revision to retry manually.')
+            artifact = c.execute(select(artifacts).where(artifacts.c.id == run['artifact_id'])).mappings().first()
+            decision = json.loads(job['approval']).get('decision') if job['approval'] else None
+            if not artifact or (not artifact['valid'] and decision != 'PIVOT'):
+                raise DatabaseError(409, 'This workflow version is stale.')
+            c.execute(update(graph_jobs).where(graph_jobs.c.run_id == run_id).values(
+                status='queued', lease_token=None, lease_until=None, updated_at=now()))
 
     def accept(self, project_id, user_id, stage, stage_order, artifact_id, decision, revised_idea):
         with self.engine.begin() as c:
@@ -290,5 +350,19 @@ class Database:
             elif decision is not None:
                 raise DatabaseError(422, 'Only the Research stage accepts a GO, PIVOT, or STOP decision.')
             c.execute(update(artifacts).where(artifacts.c.id == artifact_id).values(approved_at=now(), decision=decision))
+            graph_run = c.execute(select(runs.c.id).where(runs.c.artifact_id == artifact_id)).scalar()
+            if graph_run:
+                payload = dump({'artifact_id': artifact_id, 'decision': decision, 'accepted': True})
+                # The command and business approval share this transaction. The runner
+                # consumes it after reaching interrupt; checkpoint writes are separate.
+                c.execute(update(graph_jobs).where(and_(graph_jobs.c.run_id == graph_run,
+                    graph_jobs.c.status.in_(['executing', 'waiting_approval', 'queued', 'needs_attention']))).values(
+                        approval=payload, updated_at=now()))
+                c.execute(update(graph_jobs).where(and_(graph_jobs.c.run_id == graph_run,
+                    graph_jobs.c.status.in_(['waiting_approval', 'needs_attention']))).values(status='queued'))
+            if decision == 'PIVOT':
+                project_runs = select(runs.c.id).where(and_(runs.c.project_id == project_id, runs.c.id != graph_run))
+                c.execute(update(graph_jobs).where(and_(graph_jobs.c.run_id.in_(project_runs),
+                    graph_jobs.c.status.in_(['waiting_approval', 'queued']))).values(status='superseded', updated_at=now()))
             c.execute(update(projects).where(projects.c.id == project_id).values(updated_at=now()))
         return self.detail(project_id, user_id)

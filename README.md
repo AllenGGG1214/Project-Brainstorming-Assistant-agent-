@@ -1,5 +1,7 @@
 # Idea Atelier — Project Brainstorming Agent
 
+**V3 basic upgrade:** the local application now includes LangGraph checkpoint recovery and persistent stage approval. See the [V3 release guide](docs/V3_BASIC_RELEASE.md). This upgrade has not yet been deployed to the public URL below.
+
 Idea Atelier turns a rough project idea into an evidence-backed, costed, and traceable implementation plan. It guides the user through five approval stages, preserves every generated version, and exports the completed project as a reusable ZIP package.
 
 **Live application:** [idea-atelier-web.onrender.com](https://idea-atelier-web.onrender.com)
@@ -174,7 +176,7 @@ pnpm typecheck
 pnpm build
 ```
 
-Current verification: **16 backend tests pass**, the TypeScript check passes, and the Next.js production build completes successfully. See [`v2/VALIDATION.md`](v2/VALIDATION.md) for tested scenarios and known boundaries.
+Current local V3 verification: **40 backend tests pass** with an isolated PostgreSQL test database, the TypeScript check passes, and the Next.js production build completes successfully. See [`v2/VALIDATION.md`](v2/VALIDATION.md) for tested scenarios and known boundaries.
 
 ## Security notes
 
@@ -185,6 +187,7 @@ Current verification: **16 backend tests pass**, the TypeScript check passes, an
 
 ## Versions
 
+- **V3 basic — local upgrade:** LangGraph stage approval and checkpoint recovery. See the [release guide](docs/V3_BASIC_RELEASE.md). Not yet deployed.
 - **V2 — Idea Atelier:** the deployable Next.js and FastAPI application described above. See the [detailed V2 guide](v2/README.md).
 - **V1 — Codex-native workflow:** the original Skills and Python workflow implementation. See the [V1 documentation](Project%20Brainstorming%20Agent/README.md).
 
