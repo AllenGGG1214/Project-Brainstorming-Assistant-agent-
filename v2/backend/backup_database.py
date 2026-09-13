@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
+from sqlalchemy.engine import make_url
 
 
 def binary(name):
@@ -32,16 +33,26 @@ def backup():
     if not url.startswith(('postgres://', 'postgresql://', 'postgresql+psycopg://')):
         raise RuntimeError('Configure the PostgreSQL External Database URL in v2/.env as DATABASE_URL.')
     connection = url.replace('postgresql+psycopg://', 'postgresql://', 1)
+    connection = connection.replace('postgres://', 'postgresql://', 1)
+    parsed = make_url(connection)
+    if not parsed.host or not parsed.username or not parsed.database:
+        raise RuntimeError('The external database URL must include a hostname, username, and database.')
     env = os.environ.copy()
-    env['PGDATABASE'] = connection  # Credentials stay out of argv and logs.
+    # libpq does not expand a URI coming only from the PGDATABASE environment
+    # variable. Split the URI into supported environment fields instead.
+    env.update(PGHOST=parsed.host, PGPORT=str(parsed.port or 5432),
+               PGUSER=parsed.username, PGPASSWORD=parsed.password or '', PGDATABASE=parsed.database)
+    for key in ('sslmode', 'sslrootcert', 'sslcert', 'sslkey', 'connect_timeout'):
+        if key in parsed.query:
+            env['PG' + key.replace('_', '').upper()] = parsed.query[key]
     env.setdefault('PGCONNECT_TIMEOUT', '20')
     env.setdefault('PGSSLMODE', 'require')
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     directory = root / 'data' / 'backups'
     directory.mkdir(parents=True, exist_ok=True)
     archive = directory / f'pre-v3-{stamp}.dump'
-    result = subprocess.run([binary('pg_dump'), '--format=custom', '--file', str(archive)],
-                            env=env, capture_output=True, timeout=300)
+    result = subprocess.run([binary('pg_dump'), '--no-password', '--format=custom', '--file', str(archive)],
+                            env=env, stdin=subprocess.DEVNULL, capture_output=True, timeout=300)
     if result.returncode:
         raise RuntimeError('Backup failed. Check database access, PostgreSQL client version, and the configured URL. Credentials were not logged.')
     verified = subprocess.run([binary('pg_restore'), '--list', str(archive)],

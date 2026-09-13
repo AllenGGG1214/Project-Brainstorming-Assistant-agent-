@@ -44,4 +44,5 @@ Two Starlette dependency deprecation warnings may appear in tests; they do not a
 - Verified an upstream revision reopens downstream stages while preserving accepted history; fixed project-list progress refresh after background generation finishes.
 - Verified PIVOT saves the revised idea and resets stage progress; STOP preserves artifacts and removes generation controls.
 - Added `backend/backup_database.py` to create a credential-safe pg_dump custom archive and verify its catalog before deployment. Render Free Tier exposes no backup export action.
+- Verified that backup tool on an isolated PostgreSQL 18 database and restored its custom archive into another isolated database; restored Alembic version is `0002`. The archive and credentials are excluded from Git.
 - Production backup, live API acceptance, pushing/merging the release, and public deployment remain pending configuration of `OPENAI_API_KEY` and the external PostgreSQL `DATABASE_URL` in local `v2/.env`.
