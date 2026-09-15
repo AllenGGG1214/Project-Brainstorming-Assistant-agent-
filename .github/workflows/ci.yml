@@ -18,7 +18,7 @@ jobs:
           cache: pip
           cache-dependency-path: v2/backend/requirements.lock.txt
       - run: pip install -r requirements.lock.txt
-      - run: pytest -q
+      - run: python -m pytest -q
       - run: DATABASE_URL=sqlite:///migration-test.db alembic upgrade head
 
   frontend:

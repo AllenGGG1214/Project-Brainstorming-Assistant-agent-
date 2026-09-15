@@ -6,3 +6,5 @@
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
 .auth-page{min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 20%,#eef3e6,transparent 38%),var(--bg)}.auth-card{width:420px;max-width:100%;background:#fff;border:1px solid var(--line);border-radius:14px;padding:38px;box-shadow:0 24px 80px #354b2b12}.auth-card>.brand-mark{margin-bottom:22px}.auth-card h1{font:30px var(--serif);margin:12px 0}.auth-card>p{color:var(--muted);font-size:12px}.auth-card label{display:block;font-size:11px;color:#839471;margin:16px 0 7px}.auth-card .primary{margin-top:22px}.auth-switch,.topbar-link{border:0;background:transparent;color:var(--green);font-size:11px}.auth-switch{width:100%;margin-top:20px}.topbar-link{text-decoration:underline;text-underline-offset:3px;padding:4px}
+
+.input-hint{display:block;margin-top:5px;font-size:10px;color:#929d8b}.input-hint.invalid{color:#a8624f}.input-hint.valid{color:#648843}
