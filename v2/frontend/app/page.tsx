@@ -50,7 +50,7 @@ export default function Home() {
   const loadList = useCallback(async () => setProjects(await api<ProjectSummary[]>('/projects')), []);
   useEffect(() => {
     Promise.all([api<Health>('/health').then(setHealth), api<AuthStatus>('/auth/status').then(async status => { setAuth(status); if (status.authenticated) await loadList(); })])
-      .catch(() => setError('Cannot reach the backend. Start FastAPI on port 8000, then retry the connection.'))
+      .catch(() => setError('The backend did not finish waking up. Retry the connection, or check the Render service logs.'))
       .finally(() => setLoading(false));
     const saved = localStorage.getItem('brainstorm-project');
     if (saved) { selectedRef.current = saved; setSelected(saved); }
@@ -84,7 +84,13 @@ export default function Home() {
   }
   function chooseStage(s: Stage) { setStage(s); setVersion(null); setTab(s === 'prototype' ? 'preview' : 'document'); setFeedback(''); setHistory(false); setPivot(false); }
   async function create(e: FormEvent) {
-    e.preventDefault(); setBusy(true); setError('');
+    e.preventDefault();
+    const words = idea.trim() ? idea.trim().split(/\s+/).length : 0;
+    if (!title.trim() || words < 10) {
+      setError(!title.trim() ? 'Add a project name to continue.' : `Describe your idea with at least 10 words. Add ${10 - words} more.`);
+      return;
+    }
+    setBusy(true); setError('');
     try { const p = await api<Project>('/projects', { title, idea, constraints, mode }); choose(p); setModal(false); setTitle(''); setIdea(''); setConstraints(''); await loadList(); }
     catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
@@ -126,8 +132,17 @@ export default function Home() {
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
   async function reconnect() {
-    setError('');
-    try { setHealth(await api<Health>('/health')); await loadList(); } catch { setError('The backend is still unavailable. Check the startup logs.'); }
+    setError(''); setLoading(true);
+    try {
+      const [nextHealth, nextAuth] = await Promise.all([api<Health>('/health'), api<AuthStatus>('/auth/status')]);
+      setHealth(nextHealth); setAuth(nextAuth);
+      if (nextAuth.required && !nextAuth.authenticated) {
+        setProjects([]); setSelected(null); setProject(null);
+        return;
+      }
+      await loadList();
+    } catch { setError('The backend is still unavailable. Check the startup logs.'); }
+    finally { setLoading(false); }
   }
   async function logout() {
     await api('/auth/logout', {}); localStorage.removeItem('brainstorm-project'); setSelected(null); setProject(null); setProjects([]);
@@ -135,6 +150,8 @@ export default function Home() {
   }
   const stageIcons = [FileText, Search, Layers3, Sparkles, FolderOpen];
   const StageIcon = stageIcons[index];
+  const ideaWordCount = idea.trim() ? idea.trim().split(/\s+/).length : 0;
+  const missingIdeaWords = Math.max(0, 10 - ideaWordCount);
 
   if (auth?.required && !auth.authenticated) return <AuthGate status={auth} onAuthenticated={async status => { setAuth(status); await loadList(); }} />;
 
@@ -176,7 +193,7 @@ export default function Home() {
       </div>}
     </main>
 
-    {modal && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget && !busy) setModal(false); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="create-title"><button className="modal-close icon-button" aria-label="Close new project dialog" onClick={() => setModal(false)} disabled={busy}><X size={20} /></button><span className="eyebrow">A NEW EXPLORATION</span><h2 id="create-title">What will you build next?</h2><p className="muted">It does not need to be complete. A short description is a good place to start.</p><form onSubmit={create}><label htmlFor="title">Project name</label><input id="title" ref={formTitle} required maxLength={120} value={title} onChange={e => setTitle(e.target.value)} placeholder="Give your idea a working title" /><label htmlFor="idea">Describe your idea</label><textarea id="idea" required minLength={10} maxLength={12000} rows={5} value={idea} onChange={e => setIdea(e.target.value)} placeholder="Who will it help, what problem will it solve, and what do you want to build?" /><label htmlFor="constraints">Time, skills, and budget <span className="muted">optional</span></label><textarea id="constraints" rows={2} maxLength={4000} value={constraints} onChange={e => setConstraints(e.target.value)} placeholder="For example: solo developer, 4 weeks, Python, $20/month" /><fieldset><legend>Generation mode</legend><label className={'mode-option ' + (mode === 'demo' ? 'selected' : '')}><input type="radio" name="mode" checked={mode === 'demo'} onChange={() => setMode('demo')} /><div><strong>Demo experience</strong><small>Fixed example · no API calls</small></div></label><label className={'mode-option ' + (mode === 'live' ? 'selected' : '')}><input type="radio" name="mode" checked={mode === 'live'} disabled={!health?.live_available} onChange={() => setMode('live')} /><div><strong>Live generation</strong><small>{health?.live_available ? 'Model generation + live search · uses API credits' : 'Configure the backend API key first'}</small></div></label></fieldset>{error && <div className="form-error" role="alert">{error}</div>}<button className="primary full" disabled={busy || !health || title.trim().length === 0 || idea.trim().length < 10}>{busy ? <LoaderCircle className="spin" size={18} /> : <Plus size={18} />}Create project<ArrowRight size={18} /></button></form></section></div>}
+    {modal && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget && !busy) setModal(false); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="create-title"><button className="modal-close icon-button" aria-label="Close new project dialog" onClick={() => setModal(false)} disabled={busy}><X size={20} /></button><span className="eyebrow">A NEW EXPLORATION</span><h2 id="create-title">What will you build next?</h2><p className="muted">It does not need to be complete. A short description is a good place to start.</p><form onSubmit={create}><label htmlFor="title">Project name</label><input id="title" ref={formTitle} required maxLength={120} value={title} onChange={e => setTitle(e.target.value)} placeholder="Give your idea a working title" /><label htmlFor="idea">Describe your idea</label><textarea id="idea" required maxLength={12000} rows={5} value={idea} onChange={e => setIdea(e.target.value)} placeholder="Who will it help, what problem will it solve, and what do you want to build? Write at least 10 words." /><small className={'input-hint ' + (missingIdeaWords ? 'invalid' : 'valid')}>{missingIdeaWords ? `At least 10 words · ${missingIdeaWords} more needed` : `At least 10 words · ${ideaWordCount} entered`}</small><label htmlFor="constraints">Time, skills, and budget <span className="muted">optional</span></label><textarea id="constraints" rows={2} maxLength={4000} value={constraints} onChange={e => setConstraints(e.target.value)} placeholder="For example: solo developer, 4 weeks, Python, $20/month" /><fieldset><legend>Generation mode</legend><label className={'mode-option ' + (mode === 'demo' ? 'selected' : '')}><input type="radio" name="mode" checked={mode === 'demo'} onChange={() => setMode('demo')} /><div><strong>Demo experience</strong><small>Fixed example · no API calls</small></div></label><label className={'mode-option ' + (mode === 'live' ? 'selected' : '')}><input type="radio" name="mode" checked={mode === 'live'} disabled={!health?.live_available} onChange={() => setMode('live')} /><div><strong>Live generation</strong><small>{health?.live_available ? 'Model generation + live search · uses API credits' : 'Configure the backend API key first'}</small></div></label></fieldset>{error && <div className="form-error" role="alert">{error}</div>}<button className="primary full" disabled={busy || !health || !title.trim() || missingIdeaWords > 0}>{busy ? <LoaderCircle className="spin" size={18} /> : <Plus size={18} />}{!health ? 'Waiting for backend…' : !title.trim() ? 'Create project · add a project name' : missingIdeaWords ? `Create project · add ${missingIdeaWords} more words` : 'Create project'}{health && title.trim() && !missingIdeaWords && <ArrowRight size={18} />}</button></form></section></div>}
     {settings && <div className="modal-backdrop"><section className="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title"><button className="modal-close icon-button" aria-label="Close settings" onClick={() => setSettings(false)}><X size={20} /></button><span className="eyebrow">YOUR WORKSPACE</span><h2 id="settings-title">Connection & usage</h2><div className="settings-status"><span className="status-dot" />Backend: {health ? 'Connected' : 'Not connected'}<br />Access: {auth?.required ? `Private · ${auth.user?.email}` : 'Local development'}<br />Live generation: {health?.live_available ? 'API key configured' : 'API key not configured'}<br />Model: {health?.model || 'Loading'}</div><h3>How it works</h3><p>Generate and accept each stage in order. After research, you choose GO, PIVOT, or STOP. Version history preserves earlier artifacts, and exports include Markdown, JSON, a function CSV, prototype HTML, and Mermaid architecture.</p><p className="muted">Demo projects use fixed content. Live projects use the server-side OpenAI API key and count toward the deployment quota.</p><button className="secondary full" onClick={reconnect}>Refresh connection status</button></section></div>}
   </div>;
 }
