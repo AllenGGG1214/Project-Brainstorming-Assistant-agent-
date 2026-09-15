@@ -13,7 +13,7 @@ export type Content = {
   tradeoffs?: string[];
 };
 export type Artifact = { id: string; stage: Stage; version: number; valid: number; approved_at: string | null; decision: string | null; created_at: string; content: Content; metadata: { mode: string; model?: string; sources: { url: string; title: string }[]; queries?: string[]; searched_at?: string; search_text?: string } };
-export type Run = { id: string; stage: Stage; status: string; error: string | null; created_at: string };
+export type Run = { id: string; stage: Stage; status: string; error: string | null; created_at: string; engine?: 'langgraph'; workflow_status?: string };
 export type Project = { id: string; title: string; idea: string; constraints: string; mode: 'demo' | 'live'; decision: string | null; created_at: string; updated_at: string; artifacts: Artifact[]; runs: Run[] };
 export type ProjectSummary = Omit<Project, 'artifacts' | 'runs'> & { accepted_count: number };
 export type Health = { live_available: boolean; model: string; auth_required: boolean };
