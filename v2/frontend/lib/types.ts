@@ -19,8 +19,37 @@ export type ProjectSummary = Omit<Project, 'artifacts' | 'runs'> & { accepted_co
 export type Health = { live_available: boolean; model: string; auth_required: boolean };
 export type AuthStatus = { required: boolean; authenticated: boolean; registration_enabled: boolean; user: { email: string } | null };
 
+const coldStartDelays = Array<number>(20).fill(3000);
+const retryableStatuses = new Set([502, 503, 504]);
+
+function wait(milliseconds: number) {
+  return new Promise(resolve => setTimeout(resolve, milliseconds));
+}
+
 export async function api<T>(path: string, body?: unknown): Promise<T> {
-  const response = await fetch('/api' + path, body === undefined ? { cache: 'no-store' } : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const options: RequestInit = body === undefined
+    ? { cache: 'no-store' }
+    : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+  let response: Response | undefined;
+  let networkError: unknown;
+
+  // Render free services can need more than 50 seconds to wake. Retry reads only:
+  // replaying a POST could create duplicate projects, runs, or approvals.
+  for (let attempt = 0; attempt <= coldStartDelays.length; attempt += 1) {
+    try {
+      response = await fetch('/api' + path, options);
+      networkError = undefined;
+      if (body !== undefined || !retryableStatuses.has(response.status) || attempt === coldStartDelays.length) break;
+    } catch (error) {
+      networkError = error;
+      if (body !== undefined || attempt === coldStartDelays.length) break;
+    }
+    await wait(coldStartDelays[attempt]);
+  }
+
+  if (!response) {
+    throw networkError instanceof Error ? networkError : new Error('Cannot reach the backend.');
+  }
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
     throw new Error(typeof data.detail === 'string' ? data.detail : `Request failed (${response.status}). Check the input and backend connection.`);
