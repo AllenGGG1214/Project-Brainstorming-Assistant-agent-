@@ -9,9 +9,8 @@ services:
     healthCheckPath: /api/health
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: idea-atelier-db
-          property: connectionString
+        # Managed in Render Environment; Blueprint syncs preserve the current value.
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL
@@ -42,9 +41,3 @@ services:
     envVars:
       - key: API_ORIGIN
         value: https://idea-atelier-api.onrender.com
-
-databases:
-  - name: idea-atelier-db
-    plan: free
-    databaseName: idea_atelier
-    user: idea_atelier
