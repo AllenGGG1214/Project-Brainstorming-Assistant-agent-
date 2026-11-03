@@ -26,6 +26,10 @@ function wait(milliseconds: number) {
   return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number) { super(message); }
+}
+
 export async function api<T>(path: string, body?: unknown): Promise<T> {
   const options: RequestInit = body === undefined
     ? { cache: 'no-store' }
@@ -52,7 +56,7 @@ export async function api<T>(path: string, body?: unknown): Promise<T> {
   }
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(typeof data.detail === 'string' ? data.detail : `Request failed (${response.status}). Check the input and backend connection.`);
+    throw new ApiError(typeof data.detail === 'string' ? data.detail : `Request failed (${response.status}). Check the input and backend connection.`, response.status);
   }
   return response.status === 204 ? undefined as T : response.json();
 }
