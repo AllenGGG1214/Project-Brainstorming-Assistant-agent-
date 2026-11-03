@@ -50,12 +50,12 @@ Demo mode uses fixed English artifacts, makes no API calls, and performs no real
 
 ## Deploy entirely on Render
 
-The repository includes a Render Blueprint for the Next.js frontend, FastAPI service, and PostgreSQL database. This is the simplest deployment for a low-traffic Beta.
+The repository includes a Render Blueprint for the Next.js frontend and FastAPI service. Create PostgreSQL separately in the same region and copy its Internal Database URL to the API service's `DATABASE_URL`. Database credentials stay in Render Environment and are preserved during Blueprint syncs.
 
 1. Push this repository to GitHub.
 2. In Render, create a Blueprint from the repository's `render.yaml`.
-3. Set `OPENAI_API_KEY` and a long random `INVITE_CODE`. Render supplies `DATABASE_URL`, configures the frontend origin, and runs `alembic upgrade head` when the API starts.
-4. Let the Blueprint create `idea-atelier-web`, `idea-atelier-api`, and `idea-atelier-db`.
+3. Set `DATABASE_URL`, `OPENAI_API_KEY` and a long random `INVITE_CODE`. For existing services, update `DATABASE_URL` manually in Render Environment. The Blueprint configures the frontend origin and runs `alembic upgrade head` when the API starts.
+4. Let the Blueprint create `idea-atelier-web` and `idea-atelier-api`.
 5. Open the `idea-atelier-web` URL, choose **Have an invite?**, and create the first account with your invite code.
 
 Production defaults require authentication, use secure HttpOnly session cookies, isolate projects by account, and limit each account to 20 live generation requests per UTC day. Change `DAILY_GENERATION_LIMIT` in Render if needed. Keep `API_ORIGIN` and every secret in platform environment variables; do not commit them.
