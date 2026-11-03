@@ -2,7 +2,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowRight, ArrowUpRight, BookOpen, Check, ChevronRight, CircleHelp, Download, FileText, FolderOpen, History, Layers3, LoaderCircle, Plus, Search, Settings2, Sparkles, Sprout, X } from 'lucide-react';
 import ArtifactView from '../components/ArtifactView';
-import { api, Artifact, AuthStatus, Health, Project, ProjectSummary, Stage, stages, stageDescriptions, stageLabels } from '../lib/types';
+import { api, ApiError, Artifact, AuthStatus, Health, Project, ProjectSummary, Stage, stages, stageDescriptions, stageLabels } from '../lib/types';
 
 const sample = { title: 'Paper Reading Assistant for Students', idea: 'I want to build an app that helps university students manage academic reading. Users can save papers, organize reading notes, and filter them by research topic. I want the project to demonstrate end-to-end product design and development skills.', constraints: 'Solo developer; 4 weeks; comfortable with Python and React; web first; $20 monthly budget.' };
 type Mode = 'demo' | 'live';
@@ -44,6 +44,8 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [projectLoadError, setProjectLoadError] = useState('');
+  const [projectRetry, setProjectRetry] = useState(0);
   const selectedRef = useRef<string | null>(null);
   const formTitle = useRef<HTMLInputElement>(null);
 
@@ -57,18 +59,29 @@ export default function Home() {
   }, [loadList]);
 
   useEffect(() => {
-    if (!selected) return;
+    if (!selected || !auth || (auth.required && !auth.authenticated)) return;
+    setProjectLoadError('');
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
       try {
         const data = await api<Project>(`/projects/${selected}`);
         if (!disposed) { setProject(data); if (data.runs.some(r => r.status === 'running')) timer = setTimeout(poll, 1200); }
-      } catch (e) { if (!disposed) setError((e as Error).message); }
+      } catch (e) {
+        if (disposed) return;
+        if (e instanceof ApiError && (e.status === 404 || e.status === 403)) {
+          selectedRef.current = null; setSelected(null); setProject(null);
+          localStorage.removeItem('brainstorm-project');
+          setNotice('The saved project is no longer available. Select another project or start a new one.');
+        } else {
+          setProjectLoadError((e as Error).message);
+          if (project) setError((e as Error).message);
+        }
+      }
     }
     void poll();
     return () => { disposed = true; clearTimeout(timer); };
-  }, [selected, busy]);
+  }, [selected, busy, auth, projectRetry]);
 
   useEffect(() => {
     if (modal) formTitle.current?.focus();
@@ -175,7 +188,7 @@ export default function Home() {
         <div className="journey">{stages.map((s, i) => { const Icon = stageIcons[i]; return <div className="journey-step" key={s}><span className="journey-number">0{i + 1}</span><Icon size={21} strokeWidth={1.5} /><h3>{stageLabels[i]}</h3><p>{stageDescriptions[i]}</p></div>; })}</div>
         <section className="recent-section"><div className="journey-title"><h2>Recent explorations <span className="count">{projects.length}</span></h2><span>Every decision stays traceable</span></div>{loading ? <div className="empty-inline"><LoaderCircle className="spin" size={22} />Connecting to your workspace…</div> : projects.length ? <div className="recent-grid">{projects.slice(0, 6).map(p => <button className="recent-card" key={p.id} onClick={() => choose(p)}><div><span className="folder-icon"><FolderOpen size={20} /></span><span className="tag">{p.mode === 'demo' ? 'Demo project' : 'Live project'}</span></div><h3>{p.title}</h3><p>{p.idea}</p><div className="progress-track"><span style={{ width: `${p.accepted_count * 20}%` }} /></div><footer><span>{p.decision === 'STOP' ? 'Stopped' : `${p.accepted_count} / 5 stages accepted`}</span><ArrowUpRight size={16} /></footer></button>)}</div> : <button className="empty-projects" onClick={() => { setTitle(sample.title); setIdea(sample.idea); setConstraints(sample.constraints); setMode('demo'); setModal(true); }}><span className="empty-icon"><BookOpen size={24} /></span><div><strong>No project yet? Start with an example.</strong><p>Try the Paper Reading Assistant workflow without an API key.</p></div><span className="text-link">Try the example <ArrowRight size={16} /></span></button>}</section>
         <footer className="overview-footer"><span>Evidence before assumptions. Clarity before code.</span><span>IDEA ATELIER / V2</span></footer>
-      </div> : !project ? <div className="loading-page"><LoaderCircle className="spin" />Loading project…</div> : <div className="workspace">
+      </div> : !project ? <div className="loading-page">{projectLoadError ? <div role="alert"><p>{projectLoadError}</p><button className="secondary" onClick={() => setProjectRetry(value => value + 1)}>Retry loading project</button></div> : <><LoaderCircle className="spin" />Loading project…</>}</div> : <div className="workspace">
         <section className="project-header"><div><div className="eyebrow">PROJECT WORKSPACE <span className="tag">{project.mode === 'demo' ? 'Demo mode' : 'Live'}</span>{stopped && <span className="tag">Stopped</span>}</div><h1>{project.title}</h1><p>{project.constraints || 'No constraints specified. Generation will state its assumptions.'}</p></div><a className="secondary" href={`/api/projects/${project.id}/export`} download><Download size={16} />Export design pack</a></section>
         {project.mode === 'demo' && <div className="demo-notice"><Sparkles size={15} /><span>This is a fixed demo. It does not call a model or perform live web search. Choose Live mode when creating a project.</span></div>}
         <nav className="stage-nav" aria-label="Five-stage workflow">{stages.map((s, i) => <button key={s} onClick={() => chooseStage(s)} className={(s === stage ? 'active ' : '') + (active(s)?.approved_at ? 'done' : '')}><span>{active(s)?.approved_at ? <Check size={16} /> : `0${i + 1}`}</span><div><strong>{stageLabels[i]}</strong><small>{active(s)?.approved_at ? 'Accepted' : running?.stage === s ? 'Generating' : active(s) ? 'Review' : 'Not started'}</small></div>{i < 4 && <ChevronRight className="stage-chevron" size={15} />}</button>)}</nav>

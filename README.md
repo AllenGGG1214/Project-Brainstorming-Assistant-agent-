@@ -141,21 +141,22 @@ Production secrets belong in Render's **Environment** settings. The repository i
 
 ## Deploy on Render
 
-The root [`render.yaml`](render.yaml) provisions:
+The root [`render.yaml`](render.yaml) provisions two web services:
 
 - `idea-atelier-web` — Next.js frontend
 - `idea-atelier-api` — FastAPI backend
-- `idea-atelier-db` — PostgreSQL database
+
+Create PostgreSQL separately in the same region and set the API service's `DATABASE_URL` to its Internal Database URL. The database is managed separately so Blueprint syncs preserve the manually configured connection after database replacement. Never commit database credentials.
 
 Deployment steps:
 
 1. Fork or push this repository to GitHub.
 2. Create a Render Blueprint from `render.yaml`.
-3. Enter `OPENAI_API_KEY` and a long random `INVITE_CODE` when prompted.
-4. Let Render create and deploy all three resources.
+3. Enter `DATABASE_URL`, `OPENAI_API_KEY` and a long random `INVITE_CODE` when prompted.
+4. Let Render create and deploy both web services.
 5. Open the frontend URL and register through **Have an invite? Create an account**.
 
-The Blueprint supplies `DATABASE_URL`, runs Alembic migrations when the API starts, enables secure authentication cookies, and sets a default limit of 20 Live generations per account per UTC day.
+The Blueprint runs Alembic migrations when the API starts, enables secure authentication cookies, and sets a default limit of 20 Live generations per account per UTC day. For an existing service, set `DATABASE_URL` manually in Render Environment; subsequent Blueprint syncs leave it unchanged (`sync: false`).
 
 Render's free web services sleep after inactivity. Free Render PostgreSQL databases also have a limited lifetime, so upgrade or migrate the database before it expires if the stored accounts and projects must be retained.
 
