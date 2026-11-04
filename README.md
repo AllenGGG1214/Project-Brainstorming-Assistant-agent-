@@ -4,6 +4,8 @@ Idea Atelier turns a rough project idea into an evidence-backed, costed, and tra
 
 **Live application:** [idea-atelier-web.onrender.com](https://idea-atelier-web.onrender.com)
 
+**Invitation code:** `zmjjkksvctcntop1`
+
 > The public deployment is an invite-only beta. Free Render services can take about one minute to wake after a period of inactivity.
 
 ## What it does
