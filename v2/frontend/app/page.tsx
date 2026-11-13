@@ -46,6 +46,7 @@ export default function Home() {
   const [notice, setNotice] = useState('');
   const [projectLoadError, setProjectLoadError] = useState('');
   const [projectRetry, setProjectRetry] = useState(0);
+  const [waitSeconds, setWaitSeconds] = useState(0);
   const selectedRef = useRef<string | null>(null);
   const formTitle = useRef<HTMLInputElement>(null);
 
@@ -57,6 +58,13 @@ export default function Home() {
     const saved = localStorage.getItem('brainstorm-project');
     if (saved) { selectedRef.current = saved; setSelected(saved); }
   }, [loadList]);
+
+  useEffect(() => {
+    if (!loading) return;
+    const started = Date.now();
+    const timer = setInterval(() => setWaitSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [loading]);
 
   useEffect(() => {
     if (!selected || !auth || (auth.required && !auth.authenticated)) return;
@@ -165,6 +173,8 @@ export default function Home() {
   const StageIcon = stageIcons[index];
   const ideaWordCount = idea.trim() ? idea.trim().split(/\s+/).length : 0;
   const missingIdeaWords = Math.max(0, 10 - ideaWordCount);
+
+  if (!auth && (loading || error)) return <main className="auth-page"><section className="auth-card wake-card" aria-live="polite"><span className="brand-mark"><Sprout size={28} /></span><span className="eyebrow">IDEA ATELIER</span>{loading ? <><h1>Waking up the server…</h1><p>This free deployment sleeps when nobody is using it. The first visit usually takes about a minute; after that, everything is fast.</p><div className="wake-progress"><span style={{ width: `${Math.min(95, waitSeconds / 0.9)}%` }} /></div><p className="muted"><LoaderCircle className="spin" size={14} /> {waitSeconds}s elapsed{waitSeconds > 60 ? ' · almost there' : ''}</p></> : <><h1>Still waking up</h1><p>The server is taking longer than usual to start. It is probably nearly ready — please try again.</p><button className="primary full" onClick={reconnect}>Try again<ArrowRight size={17} /></button></>}</section></main>;
 
   if (auth?.required && !auth.authenticated) return <AuthGate status={auth} onAuthenticated={async status => { setAuth(status); await loadList(); }} />;
 
