@@ -1,42 +1,10 @@
-# V2 · Idea Atelier
+# Architecture and Implementation
 
-A deployable project planning app with an English interface, a five-stage approval workflow, private accounts, and SQLite or PostgreSQL persistence.
-
-## Quick start on Windows
-
-Requirements: Python 3.11+, Node.js 20.9+, and pnpm. The scripts also recognize the runtimes bundled with Codex.
-
-```powershell
-cd v2
-./setup.ps1
-./start.ps1
-```
-
-Open <http://127.0.0.1:3000>. Initial setup needs access to Python and npm package registries. Logs are written to `v2/data/`.
-
-## Manual start on macOS or Linux
-
-Create a virtual environment in `v2`, activate it, and install the locked backend dependencies:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -r backend/requirements.lock.txt
-cd backend
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
-
-In another terminal:
-
-```bash
-cd v2/frontend
-pnpm install --frozen-lockfile
-pnpm dev
-```
+How Idea Atelier works internally: the implemented workflow, the code map, and current limits. For setup and deployment, see the [main README](../README.md).
 
 ## Live generation
 
-Copy `v2/.env.example` to `v2/.env` and configure:
+Copy `.env.example` to `.env` and configure:
 
 ```dotenv
 OPENAI_API_KEY=your-key-here
@@ -48,17 +16,9 @@ Restart the backend and create a project in Live mode. The selected model must s
 
 Demo mode uses fixed English artifacts, makes no API calls, and performs no real research. A failed live request never falls back to demo content.
 
-## Deploy entirely on Render
+## Deployment notes
 
-The repository includes a Render Blueprint for the Next.js frontend and FastAPI service. Create PostgreSQL separately in the same region and copy its Internal Database URL to the API service's `DATABASE_URL`. Database credentials stay in Render Environment and are preserved during Blueprint syncs.
-
-1. Push this repository to GitHub.
-2. In Render, create a Blueprint from the repository's `render.yaml`.
-3. Set `DATABASE_URL`, `OPENAI_API_KEY` and a long random `INVITE_CODE`. For existing services, update `DATABASE_URL` manually in Render Environment. The Blueprint configures the frontend origin and runs `alembic upgrade head` when the API starts.
-4. Let the Blueprint create `idea-atelier-web` and `idea-atelier-api`.
-5. Open the `idea-atelier-web` URL, choose **Have an invite?**, and create the first account with your invite code.
-
-Production defaults require authentication, use secure HttpOnly session cookies, isolate projects by account, and limit each account to 20 live generation requests per UTC day. Change `DAILY_GENERATION_LIMIT` in Render if needed. Keep `API_ORIGIN` and every secret in platform environment variables; do not commit them.
+Setup, local runs, environment variables, and Render deployment steps are in the [main README](../README.md).
 
 For a custom backend hostname, add it to `TRUSTED_HOSTS`. For multiple values, use a comma-separated list. The browser talks to the Next.js origin and Next.js proxies `/api/*` to FastAPI, so login cookies work as first-party cookies. A Vercel configuration remains available if the frontend is moved there later.
 
@@ -101,14 +61,14 @@ Interactive API docs are available at <http://127.0.0.1:8000/docs>.
 ## Validation
 
 ```bash
-cd v2/backend
+cd backend
 ../.venv/Scripts/python.exe -m pytest -q
 
 cd ../frontend
 pnpm build
 ```
 
-See [VALIDATION.md](VALIDATION.md) for the current verification record.
+See [validation.md](validation.md) for the current verification record.
 
 ## Current boundaries
 

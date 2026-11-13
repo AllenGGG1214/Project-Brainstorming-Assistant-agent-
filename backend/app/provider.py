@@ -44,7 +44,7 @@ class Provider:
             validate_traceability(stage, result, context)
             return result.model_dump(), {'mode': 'demo', 'sources': [], 'model': None}
         if not self.api_key:
-            raise ValueError('OPENAI_API_KEY is not configured. Add it to v2/.env and restart the backend.')
+            raise ValueError('OPENAI_API_KEY is not configured. Add it to .env and restart the backend.')
         with OpenAI(api_key=self.api_key, timeout=180, max_retries=0) as client:
             prompt = json.dumps({'project': project, 'accepted_upstream': context,
                                  'revision_feedback': feedback, 'previous_version': previous}, ensure_ascii=False)
