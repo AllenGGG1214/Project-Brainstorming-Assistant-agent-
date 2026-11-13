@@ -7,6 +7,6 @@ __pycache__/
 .env
 .env.local
 .agents/
-v2/data/
-v2/test-results/
+data/
+test-results/
 *.tsbuildinfo
