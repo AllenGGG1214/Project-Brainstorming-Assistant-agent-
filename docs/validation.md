@@ -1,4 +1,4 @@
-# V2 Validation Record
+# Validation Record
 
 Date: 2026-09-10. Environment: Windows, Python 3.12, Node.js 24. Dependency versions are recorded in the lock files.
 

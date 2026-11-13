@@ -63,18 +63,20 @@ The browser communicates with the Next.js origin. Next.js proxies `/api/*` reque
 
 ```text
 .
-├── README.md                         Project overview
-├── render.yaml                      Render deployment blueprint
-├── v2/                              Standalone full-stack application
-│   ├── frontend/                    Next.js App Router frontend
-│   ├── backend/app/                 FastAPI application and workflow
-│   ├── backend/migrations/          Alembic database migrations
-│   ├── backend/tests/               Auth, provider, and workflow tests
-│   ├── setup.ps1                    Windows dependency setup
-│   ├── start.ps1                    Windows development launcher
-│   ├── README.md                    Detailed V2 operations guide
-│   └── VALIDATION.md                Verification record and boundaries
-└── Project Brainstorming Agent/     Original V1 Codex-native workflow
+├── frontend/          Next.js App Router frontend (TypeScript)
+├── backend/
+│   ├── app/           FastAPI application and five-stage workflow
+│   ├── migrations/    Alembic database migrations
+│   └── tests/         Auth, provider, and workflow tests
+├── docs/
+│   ├── architecture.md   Implemented workflow, code map, and current boundaries
+│   └── validation.md     Verification record
+├── legacy/
+│   └── v1-codex-agent/   Original V1 prompt-based Codex workflow (archived)
+├── setup.ps1          Windows dependency setup
+├── start.ps1          Windows development launcher
+├── .env.example       Local configuration template
+└── render.yaml        Render deployment blueprint
 ```
 
 ## Run locally on Windows
@@ -88,7 +90,6 @@ Requirements:
 From PowerShell:
 
 ```powershell
-cd v2
 ./setup.ps1
 Copy-Item .env.example .env
 ./start.ps1
@@ -96,14 +97,13 @@ Copy-Item .env.example .env
 
 Open [http://127.0.0.1:3000](http://127.0.0.1:3000). The local backend runs at `http://127.0.0.1:8000`, with interactive API documentation at `http://127.0.0.1:8000/docs`.
 
-Demo mode works without an OpenAI API key. To use Live mode, add a valid key to `v2/.env` and restart the application.
+Demo mode works without an OpenAI API key. To use Live mode, add a valid key to `.env` and restart the application.
 
 ## Run locally on macOS or Linux
 
 Start the backend:
 
 ```bash
-cd v2
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -r backend/requirements.lock.txt
@@ -114,14 +114,14 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 Start the frontend in another terminal:
 
 ```bash
-cd v2/frontend
+cd frontend
 pnpm install --frozen-lockfile
 pnpm dev
 ```
 
 ## Environment variables
 
-Copy [`v2/.env.example`](v2/.env.example) to `v2/.env` for local development. Never commit real secrets.
+Copy [`.env.example`](.env.example) to `.env` for local development. Never commit real secrets.
 
 | Variable | Purpose | Local default |
 | --- | --- | --- |
@@ -160,24 +160,24 @@ Deployment steps:
 
 The Blueprint runs Alembic migrations when the API starts, enables secure authentication cookies, and sets a default limit of 20 Live generations per account per UTC day. For an existing service, set `DATABASE_URL` manually in Render Environment; subsequent Blueprint syncs leave it unchanged (`sync: false`).
 
-Render's free web services sleep after inactivity. Free Render PostgreSQL databases also have a limited lifetime, so upgrade or migrate the database before it expires if the stored accounts and projects must be retained.
+Render's free web services sleep after inactivity; the frontend shows a "Waking up the server" screen and wakes the backend in parallel, so the first visit takes about a minute. Free Render PostgreSQL databases also have a limited lifetime, so upgrade or migrate the database before it expires if the stored accounts and projects must be retained.
 
 ## Validation
 
-Run the backend suite from `v2/backend`:
+Run the backend suite from `backend`:
 
 ```powershell
 ../.venv/Scripts/python.exe -m pytest -q
 ```
 
-Run frontend checks from `v2/frontend`:
+Run frontend checks from `frontend`:
 
 ```bash
 pnpm typecheck
 pnpm build
 ```
 
-Current verification: **16 backend tests pass**, the TypeScript check passes, and the Next.js production build completes successfully. See [`v2/VALIDATION.md`](v2/VALIDATION.md) for tested scenarios and known boundaries.
+Current verification: **16 backend tests pass**, the TypeScript check passes, and the Next.js production build completes successfully. See [`docs/validation.md`](docs/validation.md) for tested scenarios and known boundaries.
 
 ## Security notes
 
@@ -186,10 +186,10 @@ Current verification: **16 backend tests pass**, the TypeScript check passes, an
 - Password reset, email verification, billing, admin screens, distributed workers, penetration testing, and load testing are outside the current beta scope.
 - Generated prototype code is sandboxed inside the app. Review exported HTML before opening or publishing it independently.
 
-## Versions
+## Project history
 
-- **V2 — Idea Atelier:** the deployable Next.js and FastAPI application described above. See the [detailed V2 guide](v2/README.md).
-- **V1 — Codex-native workflow:** the original Skills and Python workflow implementation. See the [V1 documentation](Project%20Brainstorming%20Agent/README.md).
+- **V2 (current):** the deployable Next.js and FastAPI application in this repository. Implementation details are in [`docs/architecture.md`](docs/architecture.md).
+- **V1 (archived):** the original prompt-based Codex workflow that defined the five-stage method. It is kept for reference in [`legacy/v1-codex-agent/`](legacy/v1-codex-agent/README.md).
 
 ## License
 

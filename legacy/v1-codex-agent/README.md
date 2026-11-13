@@ -1,3 +1,5 @@
+> **Archived.** This is the original V1 of the project: a prompt-based workflow for Codex. The maintained application is in the repository root; see the [main README](../../README.md).
+
 # Project Brainstorming Agent
 
 An evidence-first agent that turns a rough student or personal project idea into a buildable, resume-ready project plan.
