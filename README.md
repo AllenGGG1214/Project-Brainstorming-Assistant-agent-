@@ -1,38 +1,46 @@
-# Idea Atelier — Project Brainstorming Agent
+# Idea Atelier
 
-Idea Atelier turns a rough project idea into an evidence-backed, costed, and traceable implementation plan. It guides the user through five approval stages, preserves every generated version, and exports the completed project as a reusable ZIP package.
+**Turn a rough project idea into a researched, costed, and traceable build plan — one approved stage at a time.**
 
-**Live application:** [idea-atelier-web.onrender.com](https://idea-atelier-web.onrender.com)
+Idea Atelier is a human-in-the-loop planning workspace. It researches whether your idea already exists, helps you decide whether to go ahead, and then produces a scoped function plan, a clickable prototype, and an architecture, all linked by traceable requirement IDs. Every version is kept, and the finished plan exports as a ZIP.
 
-**Invitation code:** `zmjjkksvctcntop1`
+🌐 **Live beta:** [idea-atelier-web.onrender.com](https://idea-atelier-web.onrender.com). Sign-up is invite-only; contact the repository owner for an invite code.
 
-> The public deployment is an invite-only beta. Free Render services can take about one minute to wake after a period of inactivity.
+> Hosted on Render's free tier: after a period of inactivity, the first visit shows a "Waking up the server" screen for about a minute.
 
-## What it does
+## The five stages
 
-The workflow develops an idea in five stages:
+| # | Stage | Output |
+| --- | --- | --- |
+| 1 | **Idea brief** | Problem, target users, constraints, assumptions, success criteria |
+| 2 | **Research & decision** | Live web research on comparable products and resources, with cited sources, and a `GO` / `PIVOT` / `STOP` recommendation |
+| 3 | **Function plan** | Functions with IDs, MVP / Standard / Stretch scope, dependencies, effort and cost ranges |
+| 4 | **Interactive prototype** | Browser-based HTML prototype with mocked behaviour clearly marked |
+| 5 | **Architecture** | Components, data flow, integrations, deployment, security, trade-offs, and cost, mapped back to the function IDs |
 
-1. **Idea brief** — clarifies the problem, users, constraints, assumptions, and success criteria.
-2. **Research and decision** — searches the web, compares relevant products and resources, and recommends `GO`, `PIVOT`, or `STOP`.
-3. **Function plan** — defines traceable function IDs, MVP/Standard/Stretch scope, dependencies, effort estimates, and cost ranges.
-4. **Interactive prototype** — generates a browser-based HTML prototype while identifying mocked behavior.
-5. **Architecture** — maps accepted requirements to components, data flow, integrations, deployment, security, trade-offs, and cost.
+Each stage can be generated, revised with feedback, and must be explicitly accepted before the next one unlocks. You make the decision after research: `PIVOT` restarts with a revised idea, and `STOP` closes the project. Editing an earlier stage marks the later stages as out of date, without deleting their history.
 
-Each stage can be generated, revised with feedback, and explicitly accepted. Changing an upstream artifact invalidates dependent stages without deleting their history.
+## How the AI works
+
+The model doesn't run as an autonomous agent; the backend controls every step.
+
+- **Web-grounded research.** The research stage requires the model to use OpenAI's web search tool. The backend collects the source URLs from the actual search results, and it rejects a report if a link isn't one of those sources. Queries, sources, citations, and timestamps are saved with the report.
+- **Strict structured output.** Every stage must match a strict JSON format, and the backend then checks it: estimates must be consistent, dependencies must make sense, and every function ID must trace from the plan through the prototype and the architecture.
+- **Human approval at every stage.** Nothing moves forward until the user accepts it.
+- **Untrusted input.** User ideas and retrieved web pages are treated as data, not as instructions.
+- **Demo mode.** It runs the full workflow with fixed sample content and no API calls, so you can try it without an API key.
+
+It doesn't use RAG (no embeddings or vector store) or an agent framework such as LangGraph.
 
 ## Highlights
 
-- English web interface built with Next.js and TypeScript.
-- FastAPI backend with strict Pydantic validation.
-- OpenAI Responses API with Web Search and Structured Outputs.
-- Demo mode for exploring the workflow without an API key or live research.
-- Live mode with saved search sources, queries, citations, timestamps, and raw reports.
-- SQLite for local development and PostgreSQL for deployed environments.
-- Invite-only accounts, hashed passwords, opaque HttpOnly sessions, and per-user project isolation.
-- Configurable daily live-generation quota.
-- Background generation with concurrent-run protection and restart recovery.
-- Markdown, tables, Mermaid diagrams, sandboxed HTML prototypes, and JSON rendering.
-- ZIP export containing current artifacts, complete version history, source metadata, CSV estimates, prototype HTML, and Mermaid source.
+- Next.js + TypeScript frontend; FastAPI + Pydantic backend
+- SQLite locally, PostgreSQL in production, Alembic migrations
+- Invite-only accounts, hashed passwords, HttpOnly session cookies, per-user project isolation
+- Configurable daily live-generation quota per account
+- Background generation with protection against concurrent runs and recovery after a restart
+- Renders Markdown, tables, Mermaid diagrams, and sandboxed HTML prototypes
+- ZIP export: current artifacts, full version history, sources, CSV estimates, prototype HTML, Mermaid source
 
 ## Architecture
 
@@ -45,7 +53,7 @@ flowchart LR
     R --> S[Web Search]
 ```
 
-The browser communicates with the Next.js origin. Next.js proxies `/api/*` requests to FastAPI, keeping authentication cookies first-party. The backend owns all model calls and database access; the OpenAI API key is never sent to the browser or stored in the database.
+The browser only talks to the Next.js server, which forwards `/api/*` requests to FastAPI, so login cookies stay on the site's own domain. The backend owns all model calls and database access; the OpenAI API key never reaches the browser and is never stored in the database.
 
 ## Technology stack
 
