@@ -1,8 +1,11 @@
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-STAGES = ['organize', 'research', 'functions', 'prototype', 'architecture']
-Stage = Literal['organize', 'research', 'functions', 'prototype', 'architecture']
+import posixpath
+import re
+
+STAGES = ['organize', 'research', 'functions', 'prototype', 'architecture', 'starter']
+Stage = Literal['organize', 'research', 'functions', 'prototype', 'architecture', 'starter']
 
 
 class StrictModel(BaseModel):
@@ -130,11 +133,64 @@ class Architecture(StrictModel):
     tradeoffs: list[str]
 
 
-OUTPUTS = dict(zip(STAGES, [Brief, Research, Functions, Prototype, Architecture]))
+MAX_STARTER_FILES = 40
+MAX_STARTER_BYTES = 200_000
+SECRET_PATTERN = re.compile(r'(sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{30,}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)')
+
+
+def safe_relative_path(path):
+    if not path or path.startswith(('/', '\\')) or '\\' in path or ':' in path:
+        return False
+    parts = posixpath.normpath(path).split('/')
+    return '..' not in parts and posixpath.normpath(path) == path and all(parts)
+
+
+class StarterFile(StrictModel):
+    path: str = Field(min_length=1, max_length=200)
+    purpose: str
+    content: str
+    function_ids: list[str]
+
+
+class StarterTask(StrictModel):
+    id: str = Field(pattern=r'^T-\d{3}$')
+    title: str
+    function_ids: list[str]
+    done_when: str
+
+
+class Starter(StrictModel):
+    markdown: str
+    stack: str
+    run_instructions: str
+    files: list[StarterFile] = Field(min_length=1)
+    tasks: list[StarterTask] = Field(min_length=1)
+
+    @model_validator(mode='after')
+    def safe_files(self):
+        paths = [f.path for f in self.files]
+        if len(paths) > MAX_STARTER_FILES:
+            raise ValueError(f'The starter repo may contain at most {MAX_STARTER_FILES} files.')
+        if len(set(paths)) != len(paths):
+            raise ValueError('Starter file paths must be unique.')
+        if not all(safe_relative_path(p) for p in paths):
+            raise ValueError('Starter file paths must be simple relative paths without "..", drive letters, or backslashes.')
+        if 'README.md' not in paths:
+            raise ValueError('The starter repo must include a README.md at its root.')
+        if sum(len(f.content.encode('utf-8')) for f in self.files) > MAX_STARTER_BYTES:
+            raise ValueError('The starter repo is too large. Keep it to a skeleton.')
+        if any(SECRET_PATTERN.search(f.content) for f in self.files):
+            raise ValueError('The starter repo appears to contain a secret or private key. Use placeholders in .env.example instead.')
+        if len({t.id for t in self.tasks}) != len(self.tasks):
+            raise ValueError('Task IDs must be unique.')
+        return self
+
+
+OUTPUTS = dict(zip(STAGES, [Brief, Research, Functions, Prototype, Architecture, Starter]))
 
 
 def validate_traceability(stage, result, context):
-    if stage not in ('prototype', 'architecture'):
+    if stage not in ('prototype', 'architecture', 'starter'):
         return
     functions = context['functions']['functions']
     expected = {f['id'] for f in functions}
@@ -147,6 +203,13 @@ def validate_traceability(stage, result, context):
             raise ValueError('MVP functions cannot be deferred.')
         if '<html' not in result.html.lower():
             raise ValueError('The prototype must be a complete HTML document.')
+    elif stage == 'starter':
+        used = {i for f in result.files for i in f.function_ids} | {i for t in result.tasks for i in t.function_ids}
+        if not used <= expected:
+            raise ValueError('Starter files and tasks may only reference existing function IDs.')
+        mvp = {f['id'] for f in functions if f['tier'] == 'MVP'}
+        if not mvp <= used:
+            raise ValueError('Every MVP function must be covered by at least one starter file or task.')
     else:
         ids = {i for c in result.components for i in c.function_ids}
         if ids != expected or any(not c.function_ids for c in result.components):
