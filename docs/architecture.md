@@ -24,10 +24,41 @@ For a custom backend hostname, add it to `TRUSTED_HOSTS`. For multiple values, u
 
 The integration follows the official OpenAI documentation for [Web Search](https://developers.openai.com/api/docs/guides/tools-web-search) and [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
 
+## Agent and retrieval
+
+### Request flow for one stage
+
+1. `POST /api/projects/{id}/stages/{stage}/generate` checks the stage gates and the daily quota, then starts a background run.
+2. `main.generate_job` builds an `AgentContext` (`app/agent/tools.py`). It is scoped to the project, which the user's ownership check already confirmed.
+3. `Provider.generate` (`app/provider.py`) runs `run_agent` (`app/agent/harness.py`):
+   - **Tools:** the document tools when the project has uploads, plus hosted `web_search` in the research, architecture and starter stages. If no tools apply, the loop is skipped.
+   - **Loop:** each step calls the Responses API (`store=False`). The harness runs any function calls and appends the results as `function_call_output` items wrapped in `untrusted_data`. Reasoning items are not replayed.
+   - **Limits (`Budget`):** 8 steps, 16 tool calls, 80k tokens and 240 s by default. When a limit is hit, the loop stops and the final call proceeds with the evidence gathered so far.
+   - **Trace:** every model step, tool call, tool result, limit summary and final validation is written to `run_steps`.
+4. The final `responses.parse` call receives the evidence ledger: web sources, document chunks and findings.
+5. Validation: the stage's output format, `validate_traceability`, the web citation check, and `check_doc_refs`.
+
+### Retrieval (`app/rag/`)
+
+- `ingest.py`: supported file types, ZIP handling (path traversal, vendored folders and binaries skipped; size and count limits), PDF text extraction, and line-aligned chunks of about 800 tokens with overlap.
+- `store.py`: embeddings stored as JSON in `chunks.embedding`. Search combines cosine similarity with BM25-style keyword scoring; it is keyword-only when there are no embeddings. Limits: 20 documents and 2,000 chunks per project. Swap in pgvector here if the corpus needs to grow.
+- Live uploads are embedded at upload time and count as one request against the daily quota.
+
+### Evaluation (`backend/evals/`)
+
+```bash
+cd backend
+python -m evals.run --mode demo             # free; used in CI
+python -m evals.run --mode live --ideas 2   # real agent, costs credits
+python -m evals.run --mode live --judge     # adds the 1-5 rubric scored by a model
+```
+
+Reports are written to `backend/evals/reports/` (git-ignored) and compared with the previous report of the same mode. The command exits with code 1 if a deterministic metric falls below its threshold in `scorers.THRESHOLDS`.
+
 ## Implemented workflow
 
 - Create, search, select, resume, and persist projects locally.
-- Idea brief → research and decision → function plan → interactive prototype → architecture.
+- Idea brief → research and decision → function plan → interactive prototype → architecture → starter repo.
 - Generate, revise, and explicitly accept every stage.
 - GO unlocks downstream design; PIVOT saves a new idea and restarts the brief and research stages; STOP preserves and closes the project.
 - Preserve all versions. A successful upstream revision invalidates downstream artifacts without deleting history.
@@ -51,7 +82,12 @@ backend/app/
   provider.py                Responses API and source handling
   prompts.py                 English generation contract for all stages
   demo.py                    Explicitly labelled English demo artifacts
-backend/tests/               Workflow and provider contract tests
+  agent/harness.py           Bounded tool loop, budgets, and step tracing
+  agent/tools.py             Tool registry and per-run AgentContext
+  rag/ingest.py              Upload parsing, ZIP safety, and chunking
+  rag/store.py               Embeddings and hybrid search
+backend/evals/               Evaluation harness: ideas, scorers, report runner
+backend/tests/               Workflow, provider, RAG, harness, and starter tests
 backend/migrations/          Alembic production database migrations
 data/                        Local database and logs; ignored by Git
 ```
@@ -72,6 +108,6 @@ See [validation.md](validation.md) for the current verification record.
 
 ## Current boundaries
 
-The included deployment is an invite-only Beta. It does not include password reset, email verification, billing, admin screens, distributed job workers, LangGraph, or RAG. Background generation runs inside the API process; an interrupted deploy marks unfinished runs as failed so the user can retry. Generated prototype scripts run inside an opaque-origin iframe with network and external form submission blocked. Exported HTML no longer has that application-level sandbox when opened directly, so review it before use.
+The included deployment is an invite-only Beta. It does not include password reset, email verification, billing, admin screens, or distributed job workers. Background generation runs inside the API process; an interrupted deploy marks unfinished runs as failed so the user can retry. Generated prototype scripts run inside an opaque-origin iframe with network and external form submission blocked. Exported HTML no longer has that application-level sandbox when opened directly, so review it before use.
 
-The development environment has no configured OpenAI API key, so live model quality, real search relevance, billing, and evaluation across 5–10 real ideas remain unverified.
+The live agent loop, including replaying tool calls through the Responses API with `store=False`, is covered by tests that fake the OpenAI API but has not yet run against the real API. Run `python -m evals.run --mode live --ideas 2` with a key before relying on it.
