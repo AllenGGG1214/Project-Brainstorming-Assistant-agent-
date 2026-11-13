@@ -7,19 +7,21 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import Response
 
+from .agent.tools import AgentContext
 from .auth import COOKIE_NAME, hash_password, new_token, token_hash, verify_password
 from .db import Database, DatabaseError, dump
 from .provider import Provider, public_error
-from .schemas import AcceptRequest, GenerateRequest, LoginRequest, ProjectCreate, RegisterRequest, STAGES, Stage
+from .rag.ingest import MAX_UPLOAD_BYTES, IngestError, ingest
+from .schemas import safe_relative_path, AcceptRequest, GenerateRequest, LoginRequest, ProjectCreate, RegisterRequest, STAGES, Stage
 
 ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(ROOT / '.env')
-FILENAMES = dict(zip(STAGES, ['01-idea-brief.md', '02-research-and-brainstorm.md', '03-functional-list.md', '04-prototype/prototype-map.md', '05-architecture.md']))
+FILENAMES = dict(zip(STAGES, ['01-idea-brief.md', '02-research-and-brainstorm.md', '03-functional-list.md', '04-prototype/prototype-map.md', '05-architecture.md', '06-starter/STARTER.md']))
 
 
 def env_bool(name, default=False):
@@ -144,13 +146,56 @@ def create_app(db_path=None, provider=None, settings=None):
         except DatabaseError as exc:
             fail(exc)
 
+    def agent_context(project, run_id):
+        counter = {'n': 0}
+        def record(kind, payload, tokens=0):
+            counter['n'] += 1
+            try:
+                db.add_step(run_id, counter['n'], kind, payload, tokens)
+            except Exception:
+                pass  # tracing must never break a run
+        return AgentContext(project_id=project['id'], load_chunks=lambda: db.project_chunks(project['id']), record=record)
+
     def generate_job(run_id, project, stage, context, feedback, previous):
         try:
-            content, metadata_blob = generator.generate(stage, project, context, feedback, previous)
+            ctx = agent_context(project, run_id)
+            content, metadata_blob = generator.generate(stage, project, context, feedback, previous, ctx)
             metadata_blob['input_snapshot'] = {'idea': project['idea'], 'constraints': project['constraints'], 'feedback': feedback}
             db.complete_run(run_id, project, stage, STAGES, content, metadata_blob)
         except Exception as exc:
             db.fail_run(run_id, public_error(exc))
+
+    @app.post('/api/projects/{project_id}/documents', status_code=201)
+    def upload_document(project_id: str, file: UploadFile = File(...), user=Depends(current_user)):
+        try:
+            project = db.get_project(project_id, user['id'])
+        except DatabaseError as exc:
+            fail(exc)
+        data = file.file.read(MAX_UPLOAD_BYTES + 1)
+        filename = (file.filename or 'upload.txt').replace('\\', '/').split('/')[-1] or 'upload.txt'
+        try:
+            kind, pieces = ingest(filename, data)
+        except IngestError as exc:
+            raise HTTPException(422, str(exc))
+        embeddings = None
+        embedder = getattr(generator, 'embedder', lambda: None)()
+        try:
+            if project['mode'] == 'live' and embedder:
+                db.record_usage(project_id, user['id'], 'documents', config['daily_limit'])
+                try:
+                    embeddings = embedder([p['text'] for p in pieces])
+                except Exception as exc:
+                    raise HTTPException(502, public_error(exc))
+            return db.add_document(project_id, user['id'], filename, kind, len(data), pieces, embeddings)
+        except DatabaseError as exc:
+            fail(exc)
+
+    @app.post('/api/projects/{project_id}/documents/{document_id}/delete')
+    def delete_document(project_id: str, document_id: str, user=Depends(current_user)):
+        try:
+            return db.delete_document(project_id, user['id'], document_id)
+        except DatabaseError as exc:
+            fail(exc)
 
     @app.post('/api/projects/{project_id}/stages/{stage}/generate', status_code=202)
     def generate(project_id: str, stage: Stage, body: GenerateRequest, background: BackgroundTasks,
@@ -192,6 +237,12 @@ def create_app(db_path=None, provider=None, settings=None):
                 if artifact['stage'] == 'research': archive.writestr('sources.json', dump(artifact['metadata']))
                 if artifact['stage'] == 'prototype': archive.writestr('04-prototype/index.html', artifact['content']['html'])
                 if artifact['stage'] == 'architecture': archive.writestr('architecture.mmd', artifact['content']['mermaid'])
+                if artifact['stage'] == 'starter':
+                    for item in artifact['content']['files']:
+                        if safe_relative_path(item['path']):
+                            archive.writestr('06-starter/repo/' + item['path'], item['content'])
+                    tasks = '\n'.join(f"- [ ] **{t['id']}** {t['title']} ({', '.join(t['function_ids'])}). Done when: {t['done_when']}" for t in artifact['content']['tasks'])
+                    archive.writestr('06-starter/TASKS.md', f'# Implementation tasks\n\n{tasks}\n')
                 if artifact['stage'] == 'functions':
                     output = io.StringIO(newline='')
                     writer = csv.writer(output)

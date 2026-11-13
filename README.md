@@ -1,38 +1,57 @@
-# Idea Atelier — Project Brainstorming Agent
+# Idea Atelier
 
-Idea Atelier turns a rough project idea into an evidence-backed, costed, and traceable implementation plan. It guides the user through five approval stages, preserves every generated version, and exports the completed project as a reusable ZIP package.
+**An AI agent that turns a rough project idea into a researched, costed, traceable plan and a starter codebase, one approved stage at a time.**
 
-**Live application:** [idea-atelier-web.onrender.com](https://idea-atelier-web.onrender.com)
+Idea Atelier is a human-in-the-loop project-construction agent. Upload your notes, specs or an existing repo, and the agent researches whether the idea already exists, helps you decide whether to go ahead, then produces a scoped function plan, a clickable prototype, an architecture, and a starter repository, all linked by traceable requirement IDs and grounded in your documents and web sources. Every version is kept, and the finished project exports as a ZIP.
 
-**Invitation code:** `zmjjkksvctcntop1`
+🌐 **Live beta:** [idea-atelier-web.onrender.com](https://idea-atelier-web.onrender.com). Sign-up is invite-only; contact the repository owner for an invite code.
 
-> The public deployment is an invite-only beta. Free Render services can take about one minute to wake after a period of inactivity.
+> Hosted on Render's free tier: after a period of inactivity, the first visit shows a "Waking up the server" screen for about a minute.
 
-## What it does
+## The six stages
 
-The workflow develops an idea in five stages:
+| # | Stage | Output |
+| --- | --- | --- |
+| 1 | **Idea brief** | Problem, target users, constraints, assumptions, success criteria |
+| 2 | **Research & decision** | Live web research on comparable products and resources, with cited sources, and a `GO` / `PIVOT` / `STOP` recommendation |
+| 3 | **Function plan** | Functions with IDs, MVP / Standard / Stretch scope, dependencies, effort and cost ranges |
+| 4 | **Interactive prototype** | Browser-based HTML prototype with mocked behaviour clearly marked |
+| 5 | **Architecture** | Components, data flow, integrations, deployment, security, trade-offs, and cost, mapped back to the function IDs |
+| 6 | **Starter repo** | A runnable skeleton codebase (README, manifest, entry points, smoke test) and an ordered task list, every MVP function covered |
 
-1. **Idea brief** — clarifies the problem, users, constraints, assumptions, and success criteria.
-2. **Research and decision** — searches the web, compares relevant products and resources, and recommends `GO`, `PIVOT`, or `STOP`.
-3. **Function plan** — defines traceable function IDs, MVP/Standard/Stretch scope, dependencies, effort estimates, and cost ranges.
-4. **Interactive prototype** — generates a browser-based HTML prototype while identifying mocked behavior.
-5. **Architecture** — maps accepted requirements to components, data flow, integrations, deployment, security, trade-offs, and cost.
+Each stage can be generated, revised with feedback, and must be explicitly accepted before the next one unlocks. You make the decision after research: `PIVOT` restarts with a revised idea, and `STOP` closes the project. Editing an earlier stage marks the later stages as out of date, without deleting their history.
 
-Each stage can be generated, revised with feedback, and explicitly accepted. Changing an upstream artifact invalidates dependent stages without deleting their history.
+## How the agent works
+
+```mermaid
+flowchart LR
+    D[Uploaded docs / repo ZIP] --> I[Chunk + embed] --> K[(Knowledge index)]
+    subgraph H[Agent harness, per stage]
+      M[Model] -->|chooses tool| T{Tools}
+      T -->|search_documents / read_document_chunk| K
+      T -->|web_search| W[Web]
+      T -->|note_finding| L[Evidence ledger]
+      T -->|untrusted results| M
+    end
+    L --> S[Strict structured output] --> V[Validators] --> U[Human approval]
+```
+
+- **RAG over your documents.** Upload Markdown, text, PDF, code, or a ZIP of a repository. Files are split into chunks with line ranges. In live mode the chunks are embedded with OpenAI (`text-embedding-3-small`); search combines semantic similarity with keyword (BM25) scoring. Demo mode uses keyword scoring only. The agent cites chunks as `doc:<id>#<n>`, and any citation of a chunk it didn't actually retrieve is rejected.
+- **Agent runtime harness.** In each stage the model decides which tool to call next: search your documents, read a chunk, search the web, or record a finding. The harness runs the call and returns the result, labelled as untrusted data. The loop is bounded by limits on steps, tool calls, tokens and time. Every step is saved and shown live in the **Agent trace** tab.
+- **Grounded, validated output.** After the loop, a strict structured-output call produces the stage artifact from the evidence ledger. The backend then checks that web links match real search results, that document citations match retrieved chunks, that function IDs trace from the plan through the prototype, architecture and starter repo, and that starter files have safe paths, contain no secrets and cover every MVP function.
+- **Human approval at every stage.** The agent works inside a stage; nothing moves forward until you accept it, and you make the GO / PIVOT / STOP decision.
+- **Evaluation harness.** `python -m evals.run` runs 12 sample ideas (4 with uploaded documents) end to end and scores stage completion, output validity, traceability, citation validity, document grounding, starter safety, MVP coverage, tool calls, tokens and latency. CI runs it in demo mode on every push. In live mode, `--judge` adds a 1-to-5 rubric scored by a model.
+- **Demo mode.** It runs the full workflow, including real retrieval over your uploads and a recorded trace, with fixed sample content and no API calls.
 
 ## Highlights
 
-- English web interface built with Next.js and TypeScript.
-- FastAPI backend with strict Pydantic validation.
-- OpenAI Responses API with Web Search and Structured Outputs.
-- Demo mode for exploring the workflow without an API key or live research.
-- Live mode with saved search sources, queries, citations, timestamps, and raw reports.
-- SQLite for local development and PostgreSQL for deployed environments.
-- Invite-only accounts, hashed passwords, opaque HttpOnly sessions, and per-user project isolation.
-- Configurable daily live-generation quota.
-- Background generation with concurrent-run protection and restart recovery.
-- Markdown, tables, Mermaid diagrams, sandboxed HTML prototypes, and JSON rendering.
-- ZIP export containing current artifacts, complete version history, source metadata, CSV estimates, prototype HTML, and Mermaid source.
+- Next.js + TypeScript frontend; FastAPI + Pydantic backend
+- SQLite locally, PostgreSQL in production, Alembic migrations
+- Invite-only accounts, hashed passwords, HttpOnly session cookies, per-user project isolation
+- Configurable daily live-generation quota per account
+- Background generation with protection against concurrent runs and recovery after a restart
+- Renders Markdown, tables, Mermaid diagrams, and sandboxed HTML prototypes
+- ZIP export: current artifacts, full version history, sources, CSV estimates, prototype HTML, Mermaid source, and the starter repository (`06-starter/repo/`) with `TASKS.md`
 
 ## Architecture
 
@@ -45,7 +64,7 @@ flowchart LR
     R --> S[Web Search]
 ```
 
-The browser communicates with the Next.js origin. Next.js proxies `/api/*` requests to FastAPI, keeping authentication cookies first-party. The backend owns all model calls and database access; the OpenAI API key is never sent to the browser or stored in the database.
+The browser only talks to the Next.js server, which forwards `/api/*` requests to FastAPI, so login cookies stay on the site's own domain. The backend owns all model calls and database access; the OpenAI API key never reaches the browser and is never stored in the database.
 
 ## Technology stack
 
@@ -65,7 +84,10 @@ The browser communicates with the Next.js origin. Next.js proxies `/api/*` reque
 .
 ├── frontend/          Next.js App Router frontend (TypeScript)
 ├── backend/
-│   ├── app/           FastAPI application and five-stage workflow
+│   ├── app/           FastAPI application and six-stage workflow
+│   │   ├── agent/     Agent harness: tool loop, budgets, tracing
+│   │   └── rag/       Document ingestion, chunking, embeddings, search
+│   ├── evals/         Evaluation harness: sample ideas, scorers, reports
 │   ├── migrations/    Alembic database migrations
 │   └── tests/         Auth, provider, and workflow tests
 ├── docs/
@@ -164,10 +186,11 @@ Render's free web services sleep after inactivity; the frontend shows a "Waking 
 
 ## Validation
 
-Run the backend suite from `backend`:
+Run the backend suite and the demo evaluation from `backend`:
 
 ```powershell
 ../.venv/Scripts/python.exe -m pytest -q
+../.venv/Scripts/python.exe -m evals.run --mode demo
 ```
 
 Run frontend checks from `frontend`:
@@ -177,7 +200,7 @@ pnpm typecheck
 pnpm build
 ```
 
-Current verification: **16 backend tests pass**, the TypeScript check passes, and the Next.js production build completes successfully. See [`docs/validation.md`](docs/validation.md) for tested scenarios and known boundaries.
+Current verification: **40 backend tests pass**, the demo evaluation scores 1.0 on every deterministic metric across 12 ideas, the TypeScript check passes, and the Next.js production build completes. The live agent loop has not yet been run against the real OpenAI API. See [`docs/validation.md`](docs/validation.md) for tested scenarios and known boundaries.
 
 ## Security notes
 

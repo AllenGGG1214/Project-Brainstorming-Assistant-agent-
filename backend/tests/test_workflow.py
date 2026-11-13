@@ -49,11 +49,11 @@ def through(client, pid, stages):
 def test_five_stage_flow_export_and_persistence(client):
     p = create(client).json()
     result = through(client, p['id'], STAGES)
-    assert len(result) == 5
-    assert client.get('/api/projects').json()[0]['accepted_count'] == 5
+    assert len(result) == 6
+    assert client.get('/api/projects').json()[0]['accepted_count'] == 6
     response = client.get(f'/api/projects/{p["id"]}/export')
     with zipfile.ZipFile(io.BytesIO(response.content)) as z:
-        assert {'project-state.json', 'sources.json', '03-functional-list.csv', '04-prototype/index.html', 'architecture.mmd'} <= set(z.namelist())
+        assert {'project-state.json', 'sources.json', '03-functional-list.csv', '04-prototype/index.html', 'architecture.mmd', '06-starter/repo/README.md', '06-starter/TASKS.md'} <= set(z.namelist())
         snapshot = json.loads(z.read('project-state.json'))
         assert all(a['approved_at'] for a in snapshot['artifacts'])
         assert 'data-function-id="FL-001"' in z.read('04-prototype/index.html').decode()
@@ -79,7 +79,7 @@ def test_revision_invalidates_downstream_keeps_accepted_history(client):
     assert new['version'] == 2
     detail = client.get(f'/api/projects/{pid}').json()
     assert detail['decision'] is None
-    assert len(detail['artifacts']) == 6
+    assert len(detail['artifacts']) == 7
     assert sum(a['valid'] for a in detail['artifacts']) == 1
     assert next(a for a in detail['artifacts'] if a['id'] == old['organize']['id'])['approved_at']
     assert accept(client, pid, 'organize', old['organize']).status_code == 409
