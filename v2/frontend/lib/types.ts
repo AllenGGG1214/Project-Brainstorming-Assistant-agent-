@@ -19,7 +19,10 @@ export type ProjectSummary = Omit<Project, 'artifacts' | 'runs'> & { accepted_co
 export type Health = { live_available: boolean; model: string; auth_required: boolean };
 export type AuthStatus = { required: boolean; authenticated: boolean; registration_enabled: boolean; user: { email: string } | null };
 
-const coldStartDelays = Array<number>(20).fill(3000);
+// Render free services sleep when idle and can take 60-120 s to wake.
+const coldStartWindowMs = 180_000;
+const retryDelayMs = 3000;
+const attemptTimeoutMs = 25_000;
 const retryableStatuses = new Set([502, 503, 504]);
 
 function wait(milliseconds: number) {
@@ -37,18 +40,24 @@ export async function api<T>(path: string, body?: unknown): Promise<T> {
   let response: Response | undefined;
   let networkError: unknown;
 
-  // Render free services can need more than 50 seconds to wake. Retry reads only:
-  // replaying a POST could create duplicate projects, runs, or approvals.
-  for (let attempt = 0; attempt <= coldStartDelays.length; attempt += 1) {
+  // Retry reads only: replaying a POST could create duplicate projects, runs, or approvals.
+  const deadline = Date.now() + coldStartWindowMs;
+  for (;;) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), attemptTimeoutMs);
     try {
-      response = await fetch('/api' + path, options);
+      response = await fetch('/api' + path, { ...options, signal: body === undefined ? controller.signal : undefined });
       networkError = undefined;
-      if (body !== undefined || !retryableStatuses.has(response.status) || attempt === coldStartDelays.length) break;
+      if (body !== undefined || !retryableStatuses.has(response.status)) break;
     } catch (error) {
       networkError = error;
-      if (body !== undefined || attempt === coldStartDelays.length) break;
+      response = undefined;
+      if (body !== undefined) break;
+    } finally {
+      clearTimeout(timer);
     }
-    await wait(coldStartDelays[attempt]);
+    if (Date.now() + retryDelayMs >= deadline) break;
+    await wait(retryDelayMs);
   }
 
   if (!response) {
