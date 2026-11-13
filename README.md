@@ -89,12 +89,10 @@ The browser only talks to the Next.js server, which forwards `/api/*` requests t
 │   │   └── rag/       Document ingestion, chunking, embeddings, search
 │   ├── evals/         Evaluation harness: sample ideas, scorers, reports
 │   ├── migrations/    Alembic database migrations
-│   └── tests/         Auth, provider, and workflow tests
+│   └── tests/         Auth, workflow, RAG, harness and starter-repo tests
 ├── docs/
 │   ├── architecture.md   Implemented workflow, code map, and current boundaries
-│   └── validation.md     Verification record
-├── legacy/
-│   └── v1-codex-agent/   Original V1 prompt-based Codex workflow (archived)
+│   └── validation.md     What is and isn't verified
 ├── setup.ps1          Windows dependency setup
 ├── start.ps1          Windows development launcher
 ├── .env.example       Local configuration template
@@ -211,8 +209,8 @@ Current verification: **40 backend tests pass**, the demo evaluation scores 1.0 
 
 ## Project history
 
-- **V2 (current):** the deployable Next.js and FastAPI application in this repository. Implementation details are in [`docs/architecture.md`](docs/architecture.md).
-- **V1 (archived):** the original prompt-based Codex workflow that defined the five-stage method. It is kept for reference in [`legacy/v1-codex-agent/`](legacy/v1-codex-agent/README.md).
+- **Current:** the deployable Next.js and FastAPI agent in this repository, with RAG over uploads, an agent harness, a starter-repo stage and an evaluation harness. Details are in [`docs/architecture.md`](docs/architecture.md).
+- **Earlier versions:** a prompt-only five-stage workflow and the first web app. Both are in the Git history.
 
 ## License
 

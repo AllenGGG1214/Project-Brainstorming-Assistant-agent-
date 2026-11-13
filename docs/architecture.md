@@ -20,7 +20,7 @@ Demo mode uses fixed English artifacts, makes no API calls, and performs no real
 
 Setup, local runs, environment variables, and Render deployment steps are in the [main README](../README.md).
 
-For a custom backend hostname, add it to `TRUSTED_HOSTS`. For multiple values, use a comma-separated list. The browser talks to the Next.js origin and Next.js proxies `/api/*` to FastAPI, so login cookies work as first-party cookies. A Vercel configuration remains available if the frontend is moved there later.
+For a custom backend hostname, add it to `TRUSTED_HOSTS`. For multiple values, use a comma-separated list. The browser talks to the Next.js origin and Next.js proxies `/api/*` to FastAPI, so login cookies work as first-party cookies.
 
 The integration follows the official OpenAI documentation for [Web Search](https://developers.openai.com/api/docs/guides/tools-web-search) and [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
 
