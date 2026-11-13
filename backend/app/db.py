@@ -69,6 +69,43 @@ runs = Table(
     Column('finished_at', String(40)),
 )
 
+documents = Table(
+    'documents', metadata,
+    Column('id', String(32), primary_key=True),
+    Column('project_id', String(32), ForeignKey('projects.id'), nullable=False, index=True),
+    Column('filename', String(255), nullable=False),
+    Column('kind', String(20), nullable=False),
+    Column('size', Integer, nullable=False),
+    Column('chunk_count', Integer, nullable=False),
+    Column('embedded', Integer, nullable=False, default=0),
+    Column('created_at', String(40), nullable=False),
+)
+
+chunks = Table(
+    'chunks', metadata,
+    Column('id', String(32), primary_key=True),
+    Column('document_id', String(32), ForeignKey('documents.id'), nullable=False, index=True),
+    Column('project_id', String(32), ForeignKey('projects.id'), nullable=False, index=True),
+    Column('ordinal', Integer, nullable=False),
+    Column('location', String(400), nullable=False),
+    Column('text', Text, nullable=False),
+    Column('embedding', Text),
+)
+
+run_steps = Table(
+    'run_steps', metadata,
+    Column('id', String(32), primary_key=True),
+    Column('run_id', String(32), ForeignKey('runs.id'), nullable=False, index=True),
+    Column('ordinal', Integer, nullable=False),
+    Column('kind', String(20), nullable=False),
+    Column('payload', Text, nullable=False),
+    Column('tokens', Integer, nullable=False, default=0),
+    Column('created_at', String(40), nullable=False),
+)
+
+MAX_DOCUMENTS = 20
+MAX_CHUNKS = 2000
+
 Index('one_running_per_project', runs.c.project_id, unique=True,
       sqlite_where=text("status='running'"),
       postgresql_where=text("status='running'"))
@@ -205,7 +242,75 @@ class Database:
             run_rows = c.execute(select(runs).where(runs.c.project_id == project_id).order_by(runs.c.created_at.desc()).limit(50)).mappings()
             project['artifacts'] = [{**dict(a), 'content': json.loads(a['content']), 'metadata': json.loads(a['metadata'])} for a in artifact_rows]
             project['runs'] = [dict(r) for r in run_rows]
+            recent = [r['id'] for r in project['runs'][:10]]
+            steps = {}
+            if recent:
+                query = select(run_steps).where(run_steps.c.run_id.in_(recent)).order_by(run_steps.c.run_id, run_steps.c.ordinal)
+                for row in c.execute(query).mappings():
+                    steps.setdefault(row['run_id'], []).append({'kind': row['kind'], 'payload': json.loads(row['payload']),
+                                                                'tokens': row['tokens'], 'created_at': row['created_at']})
+            for r in project['runs']:
+                r['steps'] = steps.get(r['id'], [])
+            project['documents'] = [dict(d) for d in c.execute(
+                select(documents).where(documents.c.project_id == project_id).order_by(documents.c.created_at.desc())).mappings()]
             return project
+
+    # --- RAG documents -------------------------------------------------
+    def add_document(self, project_id, user_id, filename, kind, size, pieces, embeddings=None):
+        self.get_project(project_id, user_id)
+        with self.engine.begin() as c:
+            doc_count = c.execute(select(func.count()).select_from(documents).where(documents.c.project_id == project_id)).scalar_one()
+            if doc_count >= MAX_DOCUMENTS:
+                raise DatabaseError(409, f'A project can hold at most {MAX_DOCUMENTS} documents. Delete one first.')
+            chunk_count = c.execute(select(func.count()).select_from(chunks).where(chunks.c.project_id == project_id)).scalar_one()
+            if chunk_count + len(pieces) > MAX_CHUNKS:
+                raise DatabaseError(413, 'This project has reached its document size limit. Delete a document or upload a smaller file.')
+            doc_id = uid()
+            c.execute(documents.insert().values(id=doc_id, project_id=project_id, filename=filename[:255], kind=kind, size=size,
+                                                chunk_count=len(pieces), embedded=int(embeddings is not None), created_at=now()))
+            if pieces:
+                c.execute(chunks.insert(), [{'id': uid(), 'document_id': doc_id, 'project_id': project_id, 'ordinal': i,
+                                             'location': piece['location'][:400], 'text': piece['text'],
+                                             'embedding': dump(embeddings[i]) if embeddings is not None else None}
+                                            for i, piece in enumerate(pieces)])
+            c.execute(update(projects).where(projects.c.id == project_id).values(updated_at=now()))
+        return self.detail(project_id, user_id)
+
+    def delete_document(self, project_id, user_id, document_id):
+        self.get_project(project_id, user_id)
+        with self.engine.begin() as c:
+            row = c.execute(select(documents.c.id).where(and_(documents.c.id == document_id, documents.c.project_id == project_id))).first()
+            if not row:
+                raise DatabaseError(404, 'Document not found.')
+            c.execute(delete(chunks).where(chunks.c.document_id == document_id))
+            c.execute(delete(documents).where(documents.c.id == document_id))
+        return self.detail(project_id, user_id)
+
+    def project_chunks(self, project_id):
+        """Chunks for one project. Callers must already have verified ownership."""
+        with self.engine.connect() as c:
+            rows = c.execute(select(chunks.c.document_id, chunks.c.ordinal, chunks.c.location, chunks.c.text, chunks.c.embedding, documents.c.filename)
+                             .select_from(chunks.join(documents, chunks.c.document_id == documents.c.id))
+                             .where(chunks.c.project_id == project_id)).mappings()
+            return [{**dict(r), 'embedding': json.loads(r['embedding']) if r['embedding'] else None} for r in rows]
+
+    def record_usage(self, project_id, user_id, stage, daily_limit):
+        """Count a billed call outside a stage run (e.g. embeddings) against the daily quota."""
+        day_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        with self.engine.begin() as c:
+            count = c.execute(select(func.count()).select_from(runs.join(projects, runs.c.project_id == projects.c.id)).where(
+                and_(projects.c.user_id == user_id, projects.c.mode == 'live', runs.c.created_at >= day_start))).scalar_one()
+            if daily_limit > 0 and count >= daily_limit:
+                raise DatabaseError(429, f'Daily generation limit reached ({daily_limit}). Try again tomorrow.')
+            timestamp = now()
+            c.execute(runs.insert().values(id=uid(), project_id=project_id, stage=stage, status='succeeded', feedback='',
+                                           created_at=timestamp, finished_at=timestamp))
+
+    # --- Agent trace ---------------------------------------------------
+    def add_step(self, run_id, ordinal, kind, payload, tokens=0):
+        with self.engine.begin() as c:
+            c.execute(run_steps.insert().values(id=uid(), run_id=run_id, ordinal=ordinal, kind=kind,
+                                                payload=dump(payload), tokens=int(tokens or 0), created_at=now()))
 
     def prepare_run(self, project_id, user_id, stage, stage_order, feedback, daily_limit):
         timestamp = now()

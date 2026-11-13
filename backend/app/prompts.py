@@ -37,4 +37,15 @@ tradeoffs. Every component must reference FL IDs and all FL IDs must be covered.
 Clearly separate MVP and optional components; do not add enterprise infrastructure
 without requirements. Include an honest implementation roadmap and portfolio claims
 labelled Designed/Prototype; never claim planned tests or metrics already happened.''',
+    'starter': '''Generate a minimal but runnable starter repository for the accepted MVP,
+following the accepted architecture. If the user's uploaded documents or code show an
+existing stack, conventions or file layout, follow them and cite the chunk refs you relied on
+in the markdown. Otherwise choose the simplest stack the architecture allows. Include a root
+README.md (purpose, setup, run, test, how files map to FL IDs), a dependency manifest, an
+.env.example with placeholder values only, entry points and module stubs for each MVP
+component with TODO comments naming FL IDs, and at least one smoke test. Skeleton code only:
+no secrets, no real credentials, no network calls at import time, at most 40 files.
+Every MVP FL ID must appear in files[].function_ids or tasks[].function_ids. tasks is an
+ordered implementation checklist (T-001...) with a concrete done_when check per task.
+Never claim the code has been run or tested.''',
 }
