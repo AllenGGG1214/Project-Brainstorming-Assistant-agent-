@@ -25,3 +25,12 @@ Two Starlette dependency deprecation warnings may appear in tests; they do not a
 - Frontend: `pnpm build` completed with TypeScript and static page generation.
 - Database migration: Alembic `0001` upgraded a fresh SQLite database successfully; the same migration targets Render PostgreSQL through `DATABASE_URL`.
 - Dependency check: `pip check` reported no broken requirements.
+
+## Agent, RAG and starter-repo update · 2026-11-12
+
+- Backend suite: `40 passed`. New tests cover chunking, ZIP path traversal, per-account document isolation, keyword and hybrid search, the tool loop, step and token limits, rejection of fabricated `doc:` citations, starter path, size and secret checks, and MVP coverage.
+- Demo evaluation (`python -m evals.run --mode demo`): 12 ideas completed all 6 stages; every deterministic metric scored 1.0; the 4 ideas with uploads cited retrieved chunks in every stage.
+- Alembic `0002` upgraded a fresh SQLite database from `0001`.
+- Frontend: `pnpm typecheck` and `pnpm build` passed.
+- End-to-end on real servers (uvicorn + `next start`, demo mode): upload through the proxy, all 6 stages with recorded traces, and a ZIP export containing `06-starter/repo/`.
+- Not yet verified: the live agent loop against the real OpenAI API, embedding cost, and live output quality (`--judge`).

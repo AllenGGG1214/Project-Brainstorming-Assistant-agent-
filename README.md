@@ -1,14 +1,14 @@
 # Idea Atelier
 
-**Turn a rough project idea into a researched, costed, and traceable build plan — one approved stage at a time.**
+**An AI agent that turns a rough project idea into a researched, costed, traceable plan and a starter codebase, one approved stage at a time.**
 
-Idea Atelier is a human-in-the-loop planning workspace. It researches whether your idea already exists, helps you decide whether to go ahead, and then produces a scoped function plan, a clickable prototype, and an architecture, all linked by traceable requirement IDs. Every version is kept, and the finished plan exports as a ZIP.
+Idea Atelier is a human-in-the-loop project-construction agent. Upload your notes, specs or an existing repo, and the agent researches whether the idea already exists, helps you decide whether to go ahead, then produces a scoped function plan, a clickable prototype, an architecture, and a starter repository, all linked by traceable requirement IDs and grounded in your documents and web sources. Every version is kept, and the finished project exports as a ZIP.
 
 🌐 **Live beta:** [idea-atelier-web.onrender.com](https://idea-atelier-web.onrender.com). Sign-up is invite-only; contact the repository owner for an invite code.
 
 > Hosted on Render's free tier: after a period of inactivity, the first visit shows a "Waking up the server" screen for about a minute.
 
-## The five stages
+## The six stages
 
 | # | Stage | Output |
 | --- | --- | --- |
@@ -17,20 +17,31 @@ Idea Atelier is a human-in-the-loop planning workspace. It researches whether yo
 | 3 | **Function plan** | Functions with IDs, MVP / Standard / Stretch scope, dependencies, effort and cost ranges |
 | 4 | **Interactive prototype** | Browser-based HTML prototype with mocked behaviour clearly marked |
 | 5 | **Architecture** | Components, data flow, integrations, deployment, security, trade-offs, and cost, mapped back to the function IDs |
+| 6 | **Starter repo** | A runnable skeleton codebase (README, manifest, entry points, smoke test) and an ordered task list, every MVP function covered |
 
 Each stage can be generated, revised with feedback, and must be explicitly accepted before the next one unlocks. You make the decision after research: `PIVOT` restarts with a revised idea, and `STOP` closes the project. Editing an earlier stage marks the later stages as out of date, without deleting their history.
 
-## How the AI works
+## How the agent works
 
-The model doesn't run as an autonomous agent; the backend controls every step.
+```mermaid
+flowchart LR
+    D[Uploaded docs / repo ZIP] --> I[Chunk + embed] --> K[(Knowledge index)]
+    subgraph H[Agent harness, per stage]
+      M[Model] -->|chooses tool| T{Tools}
+      T -->|search_documents / read_document_chunk| K
+      T -->|web_search| W[Web]
+      T -->|note_finding| L[Evidence ledger]
+      T -->|untrusted results| M
+    end
+    L --> S[Strict structured output] --> V[Validators] --> U[Human approval]
+```
 
-- **Web-grounded research.** The research stage requires the model to use OpenAI's web search tool. The backend collects the source URLs from the actual search results, and it rejects a report if a link isn't one of those sources. Queries, sources, citations, and timestamps are saved with the report.
-- **Strict structured output.** Every stage must match a strict JSON format, and the backend then checks it: estimates must be consistent, dependencies must make sense, and every function ID must trace from the plan through the prototype and the architecture.
-- **Human approval at every stage.** Nothing moves forward until the user accepts it.
-- **Untrusted input.** User ideas and retrieved web pages are treated as data, not as instructions.
-- **Demo mode.** It runs the full workflow with fixed sample content and no API calls, so you can try it without an API key.
-
-It doesn't use RAG (no embeddings or vector store) or an agent framework such as LangGraph.
+- **RAG over your documents.** Upload Markdown, text, PDF, code, or a ZIP of a repository. Files are split into chunks with line ranges. In live mode the chunks are embedded with OpenAI (`text-embedding-3-small`); search combines semantic similarity with keyword (BM25) scoring. Demo mode uses keyword scoring only. The agent cites chunks as `doc:<id>#<n>`, and any citation of a chunk it didn't actually retrieve is rejected.
+- **Agent runtime harness.** In each stage the model decides which tool to call next: search your documents, read a chunk, search the web, or record a finding. The harness runs the call and returns the result, labelled as untrusted data. The loop is bounded by limits on steps, tool calls, tokens and time. Every step is saved and shown live in the **Agent trace** tab.
+- **Grounded, validated output.** After the loop, a strict structured-output call produces the stage artifact from the evidence ledger. The backend then checks that web links match real search results, that document citations match retrieved chunks, that function IDs trace from the plan through the prototype, architecture and starter repo, and that starter files have safe paths, contain no secrets and cover every MVP function.
+- **Human approval at every stage.** The agent works inside a stage; nothing moves forward until you accept it, and you make the GO / PIVOT / STOP decision.
+- **Evaluation harness.** `python -m evals.run` runs 12 sample ideas (4 with uploaded documents) end to end and scores stage completion, output validity, traceability, citation validity, document grounding, starter safety, MVP coverage, tool calls, tokens and latency. CI runs it in demo mode on every push. In live mode, `--judge` adds a 1-to-5 rubric scored by a model.
+- **Demo mode.** It runs the full workflow, including real retrieval over your uploads and a recorded trace, with fixed sample content and no API calls.
 
 ## Highlights
 
@@ -40,7 +51,7 @@ It doesn't use RAG (no embeddings or vector store) or an agent framework such as
 - Configurable daily live-generation quota per account
 - Background generation with protection against concurrent runs and recovery after a restart
 - Renders Markdown, tables, Mermaid diagrams, and sandboxed HTML prototypes
-- ZIP export: current artifacts, full version history, sources, CSV estimates, prototype HTML, Mermaid source
+- ZIP export: current artifacts, full version history, sources, CSV estimates, prototype HTML, Mermaid source, and the starter repository (`06-starter/repo/`) with `TASKS.md`
 
 ## Architecture
 
@@ -73,7 +84,10 @@ The browser only talks to the Next.js server, which forwards `/api/*` requests t
 .
 ├── frontend/          Next.js App Router frontend (TypeScript)
 ├── backend/
-│   ├── app/           FastAPI application and five-stage workflow
+│   ├── app/           FastAPI application and six-stage workflow
+│   │   ├── agent/     Agent harness: tool loop, budgets, tracing
+│   │   └── rag/       Document ingestion, chunking, embeddings, search
+│   ├── evals/         Evaluation harness: sample ideas, scorers, reports
 │   ├── migrations/    Alembic database migrations
 │   └── tests/         Auth, provider, and workflow tests
 ├── docs/
@@ -172,10 +186,11 @@ Render's free web services sleep after inactivity; the frontend shows a "Waking 
 
 ## Validation
 
-Run the backend suite from `backend`:
+Run the backend suite and the demo evaluation from `backend`:
 
 ```powershell
 ../.venv/Scripts/python.exe -m pytest -q
+../.venv/Scripts/python.exe -m evals.run --mode demo
 ```
 
 Run frontend checks from `frontend`:
@@ -185,7 +200,7 @@ pnpm typecheck
 pnpm build
 ```
 
-Current verification: **16 backend tests pass**, the TypeScript check passes, and the Next.js production build completes successfully. See [`docs/validation.md`](docs/validation.md) for tested scenarios and known boundaries.
+Current verification: **40 backend tests pass**, the demo evaluation scores 1.0 on every deterministic metric across 12 ideas, the TypeScript check passes, and the Next.js production build completes. The live agent loop has not yet been run against the real OpenAI API. See [`docs/validation.md`](docs/validation.md) for tested scenarios and known boundaries.
 
 ## Security notes
 
