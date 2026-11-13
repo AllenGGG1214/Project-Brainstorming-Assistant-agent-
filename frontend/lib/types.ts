@@ -15,7 +15,7 @@ export type Content = {
   files?: { path: string; purpose: string; content: string; function_ids: string[] }[];
   tasks?: { id: string; title: string; function_ids: string[]; done_when: string }[];
 };
-export type Step = { kind: 'model' | 'tool_call' | 'tool_result' | 'budget' | 'final'; payload: Record<string, unknown>; tokens: number; created_at: string };
+export type Step = { kind: 'model' | 'tool_call' | 'tool_result' | 'budget' | 'repair' | 'final'; payload: Record<string, unknown>; tokens: number; created_at: string };
 export type DocumentItem = { id: string; filename: string; kind: string; size: number; chunk_count: number; embedded: number; created_at: string };
 export type Artifact = { id: string; stage: Stage; version: number; valid: number; approved_at: string | null; decision: string | null; created_at: string; content: Content; metadata: { mode: string; model?: string; sources: { url: string; title: string }[]; queries?: string[]; searched_at?: string; search_text?: string; documents_cited?: string[]; agent?: { steps: number; tool_calls: number; tokens: number; stopped_by: string } } };
 export type Run = { id: string; stage: Stage; status: string; error: string | null; created_at: string; artifact_id: string | null; steps: Step[] };

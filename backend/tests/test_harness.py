@@ -108,8 +108,27 @@ def test_fabricated_document_citation_is_rejected():
             return reply([message('No tools needed.')])
         return reply([message(json.dumps(fabricated))])
     ctx, _ = context()
-    with patch('app.provider.OpenAI', return_value=fake_client(script, calls)), pytest.raises(ValueError, match='not retrieved'):
+    with patch('app.provider.OpenAI', return_value=fake_client(script, calls)), pytest.raises(ValueError, match='self-corrections.*not retrieved'):
         Provider('k', 'gpt-5.5').generate('organize', PROJECT, {}, '', None, ctx)
+    assert len(calls) == 4  # loop step + first attempt + 2 repairs
+
+
+def test_agent_repairs_its_own_invalid_output():
+    calls = []
+    fabricated = dict(BRIEF, markdown='# Brief\nSee doc:%s#7.' % ('d' * 32))
+    def script(n, body):
+        if n == 1:
+            return reply([call('search_documents', {'query': 'Django', 'k': 1}, 'c1')])
+        if n == 2:
+            return reply([message('Done.')])
+        return reply([message(json.dumps(fabricated if n == 3 else BRIEF))])
+    ctx, steps = context()
+    with patch('app.provider.OpenAI', return_value=fake_client(script, calls)):
+        result, meta = Provider('k', 'gpt-5.5').generate('organize', PROJECT, {}, '', None, ctx)
+    assert len(calls) == 4 and len(meta['repairs']) == 1 and 'not retrieved' in meta['repairs'][0]
+    assert 'FAILED VALIDATION' in calls[3]['input'] and 'd' * 32 in calls[3]['input']
+    assert meta['documents_cited'] == [f'doc:{DOC}#0'] and len(meta['usage']) == 4
+    assert [k for k, _ in steps].count('repair') == 1
 
 
 def test_unknown_tool_and_bad_arguments_return_errors_not_crashes():

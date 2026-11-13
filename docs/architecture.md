@@ -37,6 +37,7 @@ The integration follows the official OpenAI documentation for [Web Search](https
    - **Trace:** every model step, tool call, tool result, limit summary and final validation is written to `run_steps`.
 4. The final `responses.parse` call receives the evidence ledger: web sources, document chunks and findings.
 5. Validation: the stage's output format, `validate_traceability`, the web citation check, and `check_doc_refs`.
+6. Self-correction: if any of these checks fail, the output and the exact error are sent back to the model, which must return a fixed version. This is tried at most twice (`Provider.max_repairs`); each attempt is a `repair` step in the trace and in `metadata.repairs`. If it is still invalid, the run fails and nothing is saved.
 
 ### Retrieval (`app/rag/`)
 

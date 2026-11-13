@@ -33,6 +33,7 @@ function describe(step: Step) {
   if (step.kind === 'tool_call') return { title: `Call ${p.tool}`, body: JSON.stringify(p.arguments) };
   if (step.kind === 'tool_result') return { title: `Result from ${p.tool}`, body: String(p.summary ?? '') + (p.sources ? `\n${(p.sources as string[]).join('\n')}` : '') };
   if (step.kind === 'budget') return { title: 'Harness limits', body: `${p.steps} model steps · ${p.tool_calls} tool calls · ${p.tokens} tokens · stopped by ${String(p.stopped_by).replace('_', ' ')}` };
+  if (step.kind === 'repair') return { title: `Self-correction ${p.attempt}`, body: `Output failed validation; sent back to the model to fix:\n${p.error}` };
   return { title: 'Structured answer validated', body: `${(p.documents_cited as string[] | undefined)?.length ?? 0} document chunks cited · ${p.web_sources ?? 0} web sources${p.demo ? ' · demo run' : ''}` };
 }
 
