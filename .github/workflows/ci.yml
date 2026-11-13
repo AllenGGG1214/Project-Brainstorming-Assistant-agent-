@@ -20,6 +20,8 @@ jobs:
       - run: pip install -r requirements.lock.txt
       - run: python -m pytest -q
       - run: DATABASE_URL=sqlite:///migration-test.db alembic upgrade head
+      - name: Evaluation harness (demo mode)
+        run: python -m evals.run --mode demo --no-write
 
   frontend:
     runs-on: ubuntu-latest
