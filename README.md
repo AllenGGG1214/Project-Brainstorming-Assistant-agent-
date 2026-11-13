@@ -38,7 +38,7 @@ flowchart LR
 
 - **RAG over your documents.** Upload Markdown, text, PDF, code, or a ZIP of a repository. Files are split into chunks with line ranges. In live mode the chunks are embedded with OpenAI (`text-embedding-3-small`); search combines semantic similarity with keyword (BM25) scoring. Demo mode uses keyword scoring only. The agent cites chunks as `doc:<id>#<n>`, and any citation of a chunk it didn't actually retrieve is rejected.
 - **Agent runtime harness.** In each stage the model decides which tool to call next: search your documents, read a chunk, search the web, or record a finding. The harness runs the call and returns the result, labelled as untrusted data. The loop is bounded by limits on steps, tool calls, tokens and time. Every step is saved and shown live in the **Agent trace** tab.
-- **Grounded, validated output.** After the loop, a strict structured-output call produces the stage artifact from the evidence ledger. The backend then checks that web links match real search results, that document citations match retrieved chunks, that function IDs trace from the plan through the prototype, architecture and starter repo, and that starter files have safe paths, contain no secrets and cover every MVP function.
+- **Grounded, validated output.** After the loop, a strict structured-output call produces the stage artifact from the evidence ledger. The backend then checks that web links match real search results, that document citations match retrieved chunks, that function IDs trace from the plan through the prototype, architecture and starter repo, and that starter files have safe paths, contain no secrets and cover every MVP function. If a check fails, the agent gets the error back and corrects its own output (up to two attempts), shown in the trace.
 - **Human approval at every stage.** The agent works inside a stage; nothing moves forward until you accept it, and you make the GO / PIVOT / STOP decision.
 - **Evaluation harness.** `python -m evals.run` runs 12 sample ideas (4 with uploaded documents) end to end and scores stage completion, output validity, traceability, citation validity, document grounding, starter safety, MVP coverage, tool calls, tokens and latency. CI runs it in demo mode on every push. In live mode, `--judge` adds a 1-to-5 rubric scored by a model.
 - **Demo mode.** It runs the full workflow, including real retrieval over your uploads and a recorded trace, with fixed sample content and no API calls.
@@ -89,12 +89,10 @@ The browser only talks to the Next.js server, which forwards `/api/*` requests t
 │   │   └── rag/       Document ingestion, chunking, embeddings, search
 │   ├── evals/         Evaluation harness: sample ideas, scorers, reports
 │   ├── migrations/    Alembic database migrations
-│   └── tests/         Auth, provider, and workflow tests
+│   └── tests/         Auth, workflow, RAG, harness and starter-repo tests
 ├── docs/
 │   ├── architecture.md   Implemented workflow, code map, and current boundaries
-│   └── validation.md     Verification record
-├── legacy/
-│   └── v1-codex-agent/   Original V1 prompt-based Codex workflow (archived)
+│   └── validation.md     What is and isn't verified
 ├── setup.ps1          Windows dependency setup
 ├── start.ps1          Windows development launcher
 ├── .env.example       Local configuration template
@@ -211,8 +209,8 @@ Current verification: **40 backend tests pass**, the demo evaluation scores 1.0 
 
 ## Project history
 
-- **V2 (current):** the deployable Next.js and FastAPI application in this repository. Implementation details are in [`docs/architecture.md`](docs/architecture.md).
-- **V1 (archived):** the original prompt-based Codex workflow that defined the five-stage method. It is kept for reference in [`legacy/v1-codex-agent/`](legacy/v1-codex-agent/README.md).
+- **Current:** the deployable Next.js and FastAPI agent in this repository, with RAG over uploads, an agent harness, a starter-repo stage and an evaluation harness. Details are in [`docs/architecture.md`](docs/architecture.md).
+- **Earlier versions:** a prompt-only five-stage workflow and the first web app. Both are in the Git history.
 
 ## License
 

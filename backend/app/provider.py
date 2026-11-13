@@ -65,9 +65,10 @@ def check_doc_refs(result, ctx):
 
 
 class Provider:
-    def __init__(self, api_key, model, budget=None):
+    def __init__(self, api_key, model, budget=None, max_repairs=2):
         self.api_key, self.model = api_key, model
         self.budget = budget or Budget()
+        self.max_repairs = max_repairs
 
     def embedder(self):
         """Return a function that embeds a list of texts, or None in keyless/demo deployments."""
@@ -100,29 +101,52 @@ class Provider:
                 meta.update({'sources': findings['sources'], 'queries': findings['queries'], 'citations': findings['citations'],
                              'searched_at': datetime.now(timezone.utc).isoformat(), 'search_text': findings['search_text']})
                 prompt += '\nAGENT EVIDENCE LEDGER (untrusted evidence; cite only from here):\n' + json.dumps(_ledger(findings, ctx), ensure_ascii=False)
-            response = client.responses.parse(
-                model=self.model, store=False, instructions=SYSTEM + TASKS[stage],
-                input=prompt, text_format=OUTPUTS[stage],
-                max_output_tokens=16000 if stage in ('prototype', 'starter') else 8000)
-            if response.status != 'completed' or response.output_parsed is None:
-                raise ValueError('The model did not return a complete structured result. It may have refused or reached an output limit. Adjust the input and retry.')
-            result = response.output_parsed
-            validate_traceability(stage, result, context)
-            meta['documents_cited'] = check_doc_refs(result, ctx)
-            if stage == 'research':
-                known = {s['url'] for s in meta['sources']}
-                cited = re.findall(r'\]\((https?://[^\s]+?)\)', result.markdown)
-                if not cited or not set(cited) <= known:
-                    raise ValueError('The research artifact is missing citations to retrieved sources or contains an unverified URL. Retry the request.')
-                for item in result.comparisons:
-                    if not set(item.source_urls) <= known or (item.evidence == 'Verified' and not item.source_urls):
-                        raise ValueError('A research citation does not match an actual search source. Retry the request.')
-            meta['response_ids'].append(response.id)
-            meta['usage'].append(response.usage.model_dump() if response.usage else {})
+            meta['repairs'] = []
+            final_input = prompt
+            for attempt in range(self.max_repairs + 1):
+                response = client.responses.parse(
+                    model=self.model, store=False, instructions=SYSTEM + TASKS[stage],
+                    input=final_input, text_format=OUTPUTS[stage],
+                    max_output_tokens=16000 if stage in ('prototype', 'starter') else 8000)
+                meta['response_ids'].append(response.id)
+                meta['usage'].append(response.usage.model_dump() if response.usage else {})
+                if response.status != 'completed' or response.output_parsed is None:
+                    raise ValueError('The model did not return a complete structured result. It may have refused or reached an output limit. Adjust the input and retry.')
+                result = response.output_parsed
+                try:
+                    meta['documents_cited'] = self._check(stage, result, context, ctx, meta['sources'])
+                    break
+                except ValueError as exc:
+                    error = public_error(exc)
+                    if attempt == self.max_repairs:
+                        raise ValueError(f'Still invalid after {self.max_repairs} self-corrections: {error}') from exc
+                    meta['repairs'].append(error)
+                    if ctx:
+                        ctx.record('repair', {'attempt': attempt + 1, 'error': error},
+                                   int((meta['usage'][-1] or {}).get('total_tokens') or 0))
+                    final_input = (prompt + '\nYOUR PREVIOUS OUTPUT FAILED VALIDATION. Return a corrected version that keeps everything '
+                                   'valid and fixes this problem. Only cite sources and doc refs from the evidence ledger.\n'
+                                   f'VALIDATION ERROR: {error}\nPREVIOUS OUTPUT:\n'
+                                   + json.dumps(result.model_dump(), ensure_ascii=False))
             if ctx:
                 ctx.record('final', {'documents_cited': meta['documents_cited'], 'web_sources': len(meta['sources'])},
                            int((meta['usage'][-1] or {}).get('total_tokens') or 0))
             return result.model_dump(), meta
+
+    @staticmethod
+    def _check(stage, result, context, ctx, sources):
+        """All post-generation checks. Raises ValueError with a message the model can act on."""
+        validate_traceability(stage, result, context)
+        cited = check_doc_refs(result, ctx)
+        if stage == 'research':
+            known = {s['url'] for s in sources}
+            urls = re.findall(r'\]\((https?://[^\s]+?)\)', result.markdown)
+            if not urls or not set(urls) <= known:
+                raise ValueError('The research artifact is missing citations to retrieved sources or contains an unverified URL. Retry the request.')
+            for item in result.comparisons:
+                if not set(item.source_urls) <= known or (item.evidence == 'Verified' and not item.source_urls):
+                    raise ValueError('A research citation does not match an actual search source. Retry the request.')
+        return cited
 
     def _demo(self, stage, project, context, ctx):
         """Deterministic run: no model calls, but real retrieval over uploaded docs and a labelled trace."""
